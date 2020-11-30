@@ -41,6 +41,121 @@ using namespace std;
 
 string functionName, incident, incidentType;
 
+class StringHandler {
+public:
+  StringHandler(string str) : str(str) {};
+
+  string replace(string rgx, string substitute) {
+    regex e(rgx);
+    return regex_replace(str, e, substitute);
+  }
+
+  vector<string> split(char delimiter) {
+    vector <string> substrings;
+    string word = "";
+    for (auto x : str) {
+      if (x == delimiter) {
+        substrings.push_back(word);
+        word = "";
+      } else {
+        word = word + x;
+      }
+    }
+    substrings.push_back(word);
+    return substrings;
+  }
+
+private:
+  string str;
+};
+
+class SymbolTable {
+public:
+  static SymbolTable *getInstance() {
+    if (!instance)
+      instance = new SymbolTable;
+    return instance;
+  }
+
+  string addVariableSymbol(string var, string type) {
+
+    string varSymbol = "";
+
+    if (this->getVariableSymbols(var).size() == 0) {
+      if (type.compare("LVALUE"))
+        varSymbol = this->insertNewSymbol(var);
+    } else {
+      if (type.compare("LVALUE"))
+        varSymbol = this->getVariableLastSymbol(var);
+      else {
+        if (this->getVariableType(var).compare("LVALUE"))
+          varSymbol = this->getVariableLastSymbol(var);
+        else
+          varSymbol = this->insertNewSymbol(var);
+      }
+    }
+
+    if (this->getVariableType(var).compare("LVALUE"))
+      this->setVariableType(var, type);
+
+    return varSymbol;
+  }
+
+  map<string, pair<set<string>, string>> getTable() {
+    return this->symbolTable;
+  }
+
+  void setTable(map<string, pair<set<string>, string>> table) {
+    this->symbolTable = table;
+  }
+
+  void print() {
+    map<string, pair<set<string>, string>> st;
+    for (map<string, pair<set<string>, string>>::const_iterator it = symbolTable.begin(); it != symbolTable.end(); ++it) {
+      cout << it->first << ": (";
+      pair<set<string>, string> symbols = it->second;
+      for (string s: symbols.first) {
+        cout << s << ' ';
+      }
+      cout << ") " << symbols.second << endl;
+    }
+  }
+
+protected:
+  string insertNewSymbol(string variable) {
+    set<string> variableSymbols = this->getVariableSymbols(variable);
+    string s = this->symbol + to_string(variableSymbols.size()) + "_" + variable;
+    variableSymbols.insert(s);
+    this->setVariableSymbols(variable, variableSymbols);
+    return s;
+  }
+  string getVariableLastSymbol(string variable) {
+    set<string> variableSymbols = this->getVariableSymbols(variable);
+    return *--variableSymbols.end();
+  }
+  set<string> getVariableSymbols(string variable) {
+    return this->symbolTable[variable].first;
+  }
+  string getVariableType(string variable) {
+    return this->symbolTable[variable].second;
+  }
+  void setVariableType(string variable, string type) {
+    this->symbolTable[variable].second = type;
+  }
+  void setVariableSymbols(string variable, set<string> symbols) {
+    this->symbolTable[variable].first = symbols;
+  }
+private:
+  SymbolTable() {
+    map<string, pair<set<string>, string>> st;
+    symbol = "s";
+    symbolTable = st;
+  }
+  static SymbolTable *instance;
+  string symbol;
+  map<string, pair<set<string>, string>> symbolTable;
+};
+
 string removeSpaces(string str) {
   str.erase(remove(str.begin(), str.end(), ' '), str.end());
   str.erase(remove(str.begin(), str.end(), '\n'), str.end());
@@ -48,7 +163,7 @@ string removeSpaces(string str) {
 }
 
 vector<string> split(string s, char delimiter) {
-  vector<string> substrings;
+  vector <string> substrings;
   string word = "";
   for (auto x : s) {
     if (x == delimiter) {
@@ -117,11 +232,6 @@ string addVariableSymbol(string var, string type, map<string, pair<set<string>, 
       varSymbol = "";
     }
   } else {
-//    cout << "Symbols for var " << var << ": ";
-//    for (string s : varSymbols) {
-//      cout << s << ' ';
-//    }
-//    cout << endl;
     if (type.compare("LVALUE"))
       varSymbol = *--varSymbols.end();
     else {
@@ -166,7 +276,11 @@ void getStmtOperands(
 
     if (type.compare("")) {
       string var = GetSourceLevelStmtString(stmt, Result);
-      string varSymbol = addVariableSymbol(var, type, symbolTable);
+      SymbolTable *st = st->getInstance();
+
+      string varSymbol = st->addVariableSymbol(var, type);
+      st->print();
+//      string varSymbol = addVariableSymbol(var, type, symbolTable);
 //      cout << "Type: " << type << " Var: " << var << " VarSymbol: " << varSymbol << endl;
       if (varSymbol.compare("")) {
         pair <string, string> op(var, varSymbol);
@@ -312,13 +426,6 @@ vector<vector<string>> GetBlockCondition(
             index++;
           }
 
-          cout << "Function constraints List: " << endl;
-          for (vector<string> fc: functionConstraintsList) {
-            for (string ss: fc)
-              cout << ss << ' ';
-            cout << endl;
-          }
-
           vector<vector<string>> newConstraintsList;
           for (vector<string> c: constraintsList) {
             for (vector<string> fc: functionConstraintsList) {
@@ -327,21 +434,7 @@ vector<vector<string>> GetBlockCondition(
               newConstraintsList.push_back(newConstraints);
             }
           }
-          cout << "Before Function Constraints List: " << endl;
-          for (vector<string> c: constraintsList) {
-            for (string s: c) {
-              cout << s << ' ';
-            }
-            cout << endl;
-          }
           constraintsList = newConstraintsList;
-          cout << "After Function Constraints List: " << endl;
-          for (vector<string> c: constraintsList) {
-            for (string s: c) {
-              cout << s << ' ';
-            }
-            cout << endl;
-          }
         }
       } else {
         if (stmtClass.compare("DeclStmt") == 0) {
@@ -404,18 +497,13 @@ void BottomUpCFGTraverse(
   }
   vector<vector<string>> constraintsList = GetBlockCondition(startBlock, constraints, Result, symbolTable);
 
-  // cout << "Block Constraints List: " << endl;
-  // for (vector<string> c: constraintsList) {
-  //   for (string s: c) {
-  //     cout << s << ' ';
-  //   }
-  //   cout << endl;
-  // }
-
+  SymbolTable *st = st->getInstance();
+  map<string, pair<set<string>, string>>tableCopy = st->getTable();
   for (clang::CFGBlock::const_pred_iterator I = startBlock->pred_begin(), E = startBlock->pred_end(); I != E; I++) {
     for (vector<string> c: constraintsList) {
       vector<string> constraintsCopy = copyVector(c);
       map<string, pair<set<string>, string>>symbolTableCopy = symbolTable;
+      st->setTable(tableCopy);
       BottomUpCFGTraverse((*I).getReachableBlock(), beginBlockId, startBlock->getBlockID(), Result, constraintsCopy, paths, symbolTableCopy);
     }
   }
@@ -527,6 +615,8 @@ public:
     return std::make_unique<MyConsumer>();
   }
 };
+
+SymbolTable *SymbolTable::instance = 0;
 
 int main(int argc, const char **argv) {
 
