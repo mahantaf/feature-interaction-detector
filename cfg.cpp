@@ -220,40 +220,10 @@ void replaceVariablesBySymbols(string& stmt, set<pair<string, string>>& vars) {
   }
 }
 
-string addVariableSymbol(string var, string type, map<string, pair<set<string>, string>>& symbolTable) {
-  set<string> varSymbols = symbolTable[var].first;
-  string varSymbol;
-
-  if (varSymbols.size() == 0) {
-    if (type.compare("LVALUE")) {
-      varSymbol = "s" + to_string(varSymbols.size()) + "_" + var;
-      varSymbols.insert(varSymbol);
-    } else {
-      varSymbol = "";
-    }
-  } else {
-    if (type.compare("LVALUE"))
-      varSymbol = *--varSymbols.end();
-    else {
-      if (symbolTable[var].second.compare("LVALUE")) {
-        varSymbol = *--varSymbols.end();
-      } else {
-        varSymbol = "s" + to_string(varSymbols.size()) + "_" + var;
-        varSymbols.insert(varSymbol);
-      }
-    }
-  }
-  if (symbolTable[var].second.compare("LVALUE"))
-    symbolTable[var].second = type;
-  symbolTable[var].first = varSymbols;
-  return varSymbol;
-}
-
 void getStmtOperands(
     const clang::Stmt* stmt,
     set<pair<string, string>>& operands,
     clang::ast_matchers::MatchFinder::MatchResult Result,
-    map<string, pair<set<string>, string>>& symbolTable,
     string type
 ) {
 
@@ -265,12 +235,12 @@ void getStmtOperands(
     const clang::Stmt *rhs = binaryOperator->getRHS();
 
     if (binaryOperator->isAssignmentOp()) {
-      getStmtOperands(rhs, operands, Result, symbolTable, "RVALUE");
-      getStmtOperands(lhs, operands, Result, symbolTable, "LVALUE");
+      getStmtOperands(rhs, operands, Result, "RVALUE");
+      getStmtOperands(lhs, operands, Result, "LVALUE");
     } else {
 
-      getStmtOperands(rhs, operands, Result, symbolTable, type);
-      getStmtOperands(lhs, operands, Result, symbolTable, type);
+      getStmtOperands(rhs, operands, Result, type);
+      getStmtOperands(lhs, operands, Result, type);
     }
   } else if (stmtClass.compare("ImplicitCastExpr") == 0 || stmtClass.compare("DeclRefExpr") == 0) {
 
@@ -280,8 +250,6 @@ void getStmtOperands(
       SymbolTable *st = st->getInstance();
       string varSymbol = st->addVariableSymbol(var, type);
 
-//      string varSymbol = addVariableSymbol(var, type, symbolTable);
-//      cout << "Type: " << type << " Var: " << var << " VarSymbol: " << varSymbol << endl;
       if (varSymbol.compare("")) {
         pair <string, string> op(var, varSymbol);
         operands.insert(op);
@@ -291,7 +259,7 @@ void getStmtOperands(
   } else if (stmtClass.compare("ParenExpr") == 0) {
       const clang::ParenExpr *parenExpr = cast<clang::ParenExpr>(stmt);
       const clang::Stmt *subParen = parenExpr->getSubExpr();
-      getStmtOperands(subParen, operands, Result, symbolTable, type);
+      getStmtOperands(subParen, operands, Result, type);
   } else if (stmtClass.compare("DeclStmt") == 0) {
     const clang::DeclStmt *declStmt = cast<clang::DeclStmt>(stmt);
     const clang::Decl* declaration = declStmt->getSingleDecl();
@@ -302,12 +270,11 @@ void getStmtOperands(
         string var = varDecl->getNameAsString();
         SymbolTable *st = st->getInstance();
         string varSymbol = st->addVariableSymbol(var, "LVALUE");
-//        string varSymbol = addVariableSymbol(var, "LVALUE", symbolTable);
         if (varSymbol.compare("")) {
           pair <string, string> op(var, varSymbol);
           operands.insert(op);
         }
-        getStmtOperands(rhs, operands, Result, symbolTable, "RVALUE");
+        getStmtOperands(rhs, operands, Result, "RVALUE");
       }
     }
   }
@@ -316,15 +283,14 @@ void getStmtOperands(
 const string GetTerminatorCondition(
     const clang::CFGBlock* cfgBlock,
     unsigned int previousBlockId,
-    clang::ast_matchers::MatchFinder::MatchResult Result,
-    map<string, pair<set<string>, string>>& symbolTable
+    clang::ast_matchers::MatchFinder::MatchResult Result
     ) {
   const clang::Stmt *terminatorStmt = cfgBlock->getTerminatorStmt();
   if (terminatorStmt) {
     if (terminatorStmt->getStmtClass() == clang::Stmt::IfStmtClass) {
 
       set<pair<string, string>> operands;
-      getStmtOperands(cfgBlock->getTerminatorCondition(), operands, Result, symbolTable, "COND");
+      getStmtOperands(cfgBlock->getTerminatorCondition(), operands, Result, "COND");
 
       string stmt;
       if (isInBlock(cfgBlock, previousBlockId) == 0)
@@ -387,8 +353,7 @@ vector<vector<string>> addFunctionConstraints(
 vector<vector<string>> GetBlockCondition(
     const clang::CFGBlock* block,
     vector<string>& constraints,
-    clang::ast_matchers::MatchFinder::MatchResult Result,
-    map<string, pair<set<string>, string>>& symbolTable
+    clang::ast_matchers::MatchFinder::MatchResult Result
 ) {
   vector<vector<string>> constraintsList;
   constraintsList.push_back(constraints);
@@ -401,7 +366,7 @@ vector<vector<string>> GetBlockCondition(
 
 
       set<pair<string, string>> operands;
-      getStmtOperands(stmt, operands, Result, symbolTable, "");
+      getStmtOperands(stmt, operands, Result, "");
 
       string statement = GetSourceLevelStmtString(stmt, Result);
       pair<string, string> statementClassPair(statement, stmtClass);
@@ -485,28 +450,26 @@ void BottomUpCFGTraverse(
     unsigned int previousBlockId,
     clang::ast_matchers::MatchFinder::MatchResult Result,
     vector<string>& constraints,
-    vector<vector<string>>& paths,
-    map<string, pair<set<string>, string>>& symbolTable
+    vector<vector<string>>& paths
     ) {
   cout << "Visiting block " << startBlock->getBlockID() << endl;
   if (startBlock->getBlockID() == beginBlockId) {
     return paths.push_back(constraints);
   }
   if (previousBlockId != 0) {
-    const string terminatorCondition = GetTerminatorCondition(startBlock, previousBlockId, Result, symbolTable);
+    const string terminatorCondition = GetTerminatorCondition(startBlock, previousBlockId, Result);
     if (terminatorCondition.compare(""))
       constraints.push_back(terminatorCondition);
   }
-  vector<vector<string>> constraintsList = GetBlockCondition(startBlock, constraints, Result, symbolTable);
+  vector<vector<string>> constraintsList = GetBlockCondition(startBlock, constraints, Result);
 
   SymbolTable *st = st->getInstance();
   map<string, pair<set<string>, string>>tableCopy = st->getTable();
   for (clang::CFGBlock::const_pred_iterator I = startBlock->pred_begin(), E = startBlock->pred_end(); I != E; I++) {
     for (vector<string> c: constraintsList) {
       vector<string> constraintsCopy = copyVector(c);
-      map<string, pair<set<string>, string>>symbolTableCopy = symbolTable;
       st->setTable(tableCopy);
-      BottomUpCFGTraverse((*I).getReachableBlock(), beginBlockId, startBlock->getBlockID(), Result, constraintsCopy, paths, symbolTableCopy);
+      BottomUpCFGTraverse((*I).getReachableBlock(), beginBlockId, startBlock->getBlockID(), Result, constraintsCopy, paths);
     }
   }
 }
@@ -573,12 +536,10 @@ class MyCallback : public clang::ast_matchers::MatchFinder::MatchCallback {
 
       vector<string> c;
       vector<vector<string>> paths;
-      map<string, pair<set<string>, string>> symbolTable;
-
       if (incidentType.compare("RETURN") == 0)
         c.push_back(returnValues[i]);
 
-      BottomUpCFGTraverse((*blk), CFG->getEntry().getBlockID(), 0, Result, c, paths, symbolTable);
+      BottomUpCFGTraverse((*blk), CFG->getEntry().getBlockID(), 0, Result, c, paths);
 
       cout << "Constrains:" << endl;
       for (vector<string> constraints: paths) {
