@@ -276,10 +276,10 @@ void getStmtOperands(
 
     if (type.compare("")) {
       string var = GetSourceLevelStmtString(stmt, Result);
-      SymbolTable *st = st->getInstance();
 
+      SymbolTable *st = st->getInstance();
       string varSymbol = st->addVariableSymbol(var, type);
-      st->print();
+
 //      string varSymbol = addVariableSymbol(var, type, symbolTable);
 //      cout << "Type: " << type << " Var: " << var << " VarSymbol: " << varSymbol << endl;
       if (varSymbol.compare("")) {
@@ -300,7 +300,9 @@ void getStmtOperands(
       if (varDecl && varDecl->hasInit()) {
         const clang::Stmt* rhs = varDecl->getInit();
         string var = varDecl->getNameAsString();
-        string varSymbol = addVariableSymbol(var, "LVALUE", symbolTable);
+        SymbolTable *st = st->getInstance();
+        string varSymbol = st->addVariableSymbol(var, "LVALUE");
+//        string varSymbol = addVariableSymbol(var, "LVALUE", symbolTable);
         if (varSymbol.compare("")) {
           pair <string, string> op(var, varSymbol);
           operands.insert(op);
