@@ -41,33 +41,33 @@ using namespace std;
 
 string functionName, incident, incidentType;
 
-class StringHandler {
-public:
-  StringHandler(string str) : str(str) {};
-
-  string replace(string rgx, string substitute) {
-    regex e(rgx);
-    return regex_replace(str, e, substitute);
-  }
-
-  vector<string> split(char delimiter) {
-    vector <string> substrings;
-    string word = "";
-    for (auto x : str) {
-      if (x == delimiter) {
-        substrings.push_back(word);
-        word = "";
-      } else {
-        word = word + x;
-      }
-    }
-    substrings.push_back(word);
-    return substrings;
-  }
-
-private:
-  string str;
-};
+//class StringExtra {
+//public:
+//  StringHandler(string str) : str(str) {};
+//
+//  string replace(string rgx, string substitute) {
+//    regex e(rgx);
+//    return regex_replace(str, e, substitute);
+//  }
+//
+//  vector<string> split(char delimiter) {
+//    vector <string> substrings;
+//    string word = "";
+//    for (auto x : str) {
+//      if (x == delimiter) {
+//        substrings.push_back(word);
+//        word = "";
+//      } else {
+//        word = word + x;
+//      }
+//    }
+//    substrings.push_back(word);
+//    return substrings;
+//  }
+//
+//private:
+//  string str;
+//};
 
 class SymbolTable {
 public:
@@ -129,19 +129,24 @@ protected:
     this->setVariableSymbols(variable, variableSymbols);
     return s;
   }
+
   string getVariableLastSymbol(string variable) {
     set<string> variableSymbols = this->getVariableSymbols(variable);
     return *--variableSymbols.end();
   }
+
   set<string> getVariableSymbols(string variable) {
     return this->symbolTable[variable].first;
   }
+
   string getVariableType(string variable) {
     return this->symbolTable[variable].second;
   }
+
   void setVariableType(string variable, string type) {
     this->symbolTable[variable].second = type;
   }
+
   void setVariableSymbols(string variable, set<string> symbols) {
     this->symbolTable[variable].first = symbols;
   }
@@ -155,6 +160,49 @@ private:
   string symbol;
   map<string, pair<set<string>, string>> symbolTable;
 };
+
+class Statement {
+public:
+  Statement(const clang::Stmt* statement) : statement(statement) {}
+private:
+  const clang::Stmt* statement;
+};
+
+class Constraint {
+public:
+  Constraint() {};
+
+  void addConstraint(string constraint) {
+    this->constraints.push_back(constraint);
+  }
+
+private:
+  vector<string> constraints;
+};
+
+class Context {
+public:
+
+  static Context *getInstance() {
+    if (!instance)
+      instance = new Context;
+    return instance;
+  }
+
+  clang::ast_matchers::MatchFinder::MatchResult* getContext() {
+    return this->context;
+  }
+
+  void setContext(clang::ast_matchers::MatchFinder::MatchResult context) {
+    this->context = &context;
+  }
+private:
+  Context() {}
+  static Context *instance;
+  clang::ast_matchers::MatchFinder::MatchResult* context;
+};
+
+
 
 string removeSpaces(string str) {
   str.erase(remove(str.begin(), str.end(), ' '), str.end());
@@ -177,10 +225,10 @@ vector<string> split(string s, char delimiter) {
   return substrings;
 }
 
-string GetSourceLevelStmtString(const clang::Stmt* stmt, clang::ast_matchers::MatchFinder::MatchResult Result) {
-
+string GetSourceLevelStmtString(const clang::Stmt* stmt) {
+  Context *context = context->getInstance();
   clang::SourceRange range = stmt->getSourceRange();
-  const clang::SourceManager *SM = Result.SourceManager;
+  const clang::SourceManager *SM = context->getContext()->SourceManager;
   llvm::StringRef ref = clang::Lexer::getSourceText(clang::CharSourceRange::getTokenRange(range), *SM,
                                                     clang::LangOptions());
 
@@ -223,7 +271,6 @@ void replaceVariablesBySymbols(string& stmt, set<pair<string, string>>& vars) {
 void getStmtOperands(
     const clang::Stmt* stmt,
     set<pair<string, string>>& operands,
-    clang::ast_matchers::MatchFinder::MatchResult Result,
     string type
 ) {
 
@@ -235,17 +282,17 @@ void getStmtOperands(
     const clang::Stmt *rhs = binaryOperator->getRHS();
 
     if (binaryOperator->isAssignmentOp()) {
-      getStmtOperands(rhs, operands, Result, "RVALUE");
-      getStmtOperands(lhs, operands, Result, "LVALUE");
+      getStmtOperands(rhs, operands, "RVALUE");
+      getStmtOperands(lhs, operands, "LVALUE");
     } else {
 
-      getStmtOperands(rhs, operands, Result, type);
-      getStmtOperands(lhs, operands, Result, type);
+      getStmtOperands(rhs, operands, type);
+      getStmtOperands(lhs, operands, type);
     }
   } else if (stmtClass.compare("ImplicitCastExpr") == 0 || stmtClass.compare("DeclRefExpr") == 0) {
 
     if (type.compare("")) {
-      string var = GetSourceLevelStmtString(stmt, Result);
+      string var = GetSourceLevelStmtString(stmt);
 
       SymbolTable *st = st->getInstance();
       string varSymbol = st->addVariableSymbol(var, type);
@@ -259,7 +306,7 @@ void getStmtOperands(
   } else if (stmtClass.compare("ParenExpr") == 0) {
       const clang::ParenExpr *parenExpr = cast<clang::ParenExpr>(stmt);
       const clang::Stmt *subParen = parenExpr->getSubExpr();
-      getStmtOperands(subParen, operands, Result, type);
+      getStmtOperands(subParen, operands, type);
   } else if (stmtClass.compare("DeclStmt") == 0) {
     const clang::DeclStmt *declStmt = cast<clang::DeclStmt>(stmt);
     const clang::Decl* declaration = declStmt->getSingleDecl();
@@ -274,7 +321,7 @@ void getStmtOperands(
           pair <string, string> op(var, varSymbol);
           operands.insert(op);
         }
-        getStmtOperands(rhs, operands, Result, "RVALUE");
+        getStmtOperands(rhs, operands, "RVALUE");
       }
     }
   }
@@ -282,21 +329,20 @@ void getStmtOperands(
 
 const string GetTerminatorCondition(
     const clang::CFGBlock* cfgBlock,
-    unsigned int previousBlockId,
-    clang::ast_matchers::MatchFinder::MatchResult Result
+    unsigned int previousBlockId
     ) {
   const clang::Stmt *terminatorStmt = cfgBlock->getTerminatorStmt();
   if (terminatorStmt) {
     if (terminatorStmt->getStmtClass() == clang::Stmt::IfStmtClass) {
 
       set<pair<string, string>> operands;
-      getStmtOperands(cfgBlock->getTerminatorCondition(), operands, Result, "COND");
+      getStmtOperands(cfgBlock->getTerminatorCondition(), operands, "COND");
 
       string stmt;
       if (isInBlock(cfgBlock, previousBlockId) == 0)
-        stmt = GetSourceLevelStmtString(cfgBlock->getTerminatorCondition(), Result);
+        stmt = GetSourceLevelStmtString(cfgBlock->getTerminatorCondition());
       else
-        stmt = "!(" + GetSourceLevelStmtString(cfgBlock->getTerminatorCondition(), Result) + ")";
+        stmt = "!(" + GetSourceLevelStmtString(cfgBlock->getTerminatorCondition()) + ")";
 
       replaceVariablesBySymbols(stmt, operands);
       return stmt;
@@ -308,18 +354,17 @@ const string GetTerminatorCondition(
 bool hasFunctionCall(
     const clang::Stmt* stmt,
     string stmtClass,
-    vector<string>& names,
-    clang::ast_matchers::MatchFinder::MatchResult Result
+    vector<string>& names
     ) {
   if (stmtClass.compare("BinaryOperator") == 0) {
     const clang::BinaryOperator *binaryOperator = cast<clang::BinaryOperator>(stmt);
     const clang::Stmt *lhs = binaryOperator->getLHS();
     const clang::Stmt *rhs = binaryOperator->getRHS();
-    return hasFunctionCall(lhs, lhs->getStmtClassName(), names, Result) ||
-           hasFunctionCall(rhs, rhs->getStmtClassName(), names, Result);
+    return hasFunctionCall(lhs, lhs->getStmtClassName(), names) ||
+           hasFunctionCall(rhs, rhs->getStmtClassName(), names);
   } else if (stmtClass.compare("CallExpr") == 0) {
     const clang::Stmt *callee = cast<clang::CallExpr>(stmt)->getCallee();
-    names.push_back(GetSourceLevelStmtString(callee, Result));
+    names.push_back(GetSourceLevelStmtString(callee));
     return true;
   }
   return false;
@@ -352,8 +397,7 @@ vector<vector<string>> addFunctionConstraints(
 
 vector<vector<string>> GetBlockCondition(
     const clang::CFGBlock* block,
-    vector<string>& constraints,
-    clang::ast_matchers::MatchFinder::MatchResult Result
+    vector<string>& constraints
 ) {
   vector<vector<string>> constraintsList;
   constraintsList.push_back(constraints);
@@ -366,13 +410,13 @@ vector<vector<string>> GetBlockCondition(
 
 
       set<pair<string, string>> operands;
-      getStmtOperands(stmt, operands, Result, "");
+      getStmtOperands(stmt, operands, "");
 
-      string statement = GetSourceLevelStmtString(stmt, Result);
+      string statement = GetSourceLevelStmtString(stmt);
       pair<string, string> statementClassPair(statement, stmtClass);
 
       vector<string> funcNames;
-      if (hasFunctionCall(stmt, stmtClass, funcNames, Result) && stmtClass.compare("CallExpr")) {
+      if (hasFunctionCall(stmt, stmtClass, funcNames) && stmtClass.compare("CallExpr")) {
         cout << "Function names: " << endl;
         for (string name: funcNames) {
           string sysCall = "./cfg test.cpp -- " + name + " c RETURN";
@@ -448,7 +492,6 @@ void BottomUpCFGTraverse(
     const clang::CFGBlock* startBlock,
     unsigned int beginBlockId,
     unsigned int previousBlockId,
-    clang::ast_matchers::MatchFinder::MatchResult Result,
     vector<string>& constraints,
     vector<vector<string>>& paths
     ) {
@@ -457,11 +500,11 @@ void BottomUpCFGTraverse(
     return paths.push_back(constraints);
   }
   if (previousBlockId != 0) {
-    const string terminatorCondition = GetTerminatorCondition(startBlock, previousBlockId, Result);
+    const string terminatorCondition = GetTerminatorCondition(startBlock, previousBlockId);
     if (terminatorCondition.compare(""))
       constraints.push_back(terminatorCondition);
   }
-  vector<vector<string>> constraintsList = GetBlockCondition(startBlock, constraints, Result);
+  vector<vector<string>> constraintsList = GetBlockCondition(startBlock, constraints);
 
   SymbolTable *st = st->getInstance();
   map<string, pair<set<string>, string>>tableCopy = st->getTable();
@@ -469,7 +512,7 @@ void BottomUpCFGTraverse(
     for (vector<string> c: constraintsList) {
       vector<string> constraintsCopy = copyVector(c);
       st->setTable(tableCopy);
-      BottomUpCFGTraverse((*I).getReachableBlock(), beginBlockId, startBlock->getBlockID(), Result, constraintsCopy, paths);
+      BottomUpCFGTraverse((*I).getReachableBlock(), beginBlockId, startBlock->getBlockID(), constraintsCopy, paths);
     }
   }
 }
@@ -489,9 +532,12 @@ class MyCallback : public clang::ast_matchers::MatchFinder::MatchCallback {
  public:
   MyCallback() {}
   void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) {
-    cout << "In callback run\n";
+
+    Context *context = context->getInstance();
+    context->setContext(Result);
+
     const auto* Function = Result.Nodes.getNodeAs<clang::FunctionDecl>("fn");
-    const auto CFG = clang::CFG::buildCFG(Function,
+    const auto cfg = clang::CFG::buildCFG(Function,
                                         Function->getBody(),
                                         Result.Context,
                                         clang::CFG::BuildOptions());
@@ -500,30 +546,30 @@ class MyCallback : public clang::ast_matchers::MatchFinder::MatchCallback {
     vector<const clang::CFGBlock*> incidentBlocks;
     vector<string> returnValues;
 
-    for (const auto* blk : *CFG) {
+    for (const auto* blk : *cfg) {
       for (clang::CFGBlock::const_iterator I = blk->begin(), E = blk->end(); I != E ; ++I) {
         clang::CFGElement El = *I;
         if (auto SE = El.getAs<clang::CFGStmt>()) {
           const clang::Stmt *stmt = SE->getStmt();
           const string stmtClass(stmt->getStmtClassName());
-          cout << GetSourceLevelStmtString(stmt, Result) << " stmt type: " << stmtClass << endl;
+          cout << GetSourceLevelStmtString(stmt) << " stmt type: " << stmtClass << endl;
           if (incidentType.compare("CALL") == 0 && stmtClass.compare("CallExpr") == 0) {
             const clang::Stmt *callee = cast<clang::CallExpr>(stmt)->getCallee();
-            string stmtString = GetSourceLevelStmtString(callee, Result);
+            string stmtString = GetSourceLevelStmtString(callee);
             if (stmtString.compare(incident) == 0)
               incidentBlocks.push_back(blk);
           } else if (incidentType.compare("WRITE") == 0 && stmtClass.compare("BinaryOperator") == 0) {
             const clang::BinaryOperator* binaryOperator = cast<clang::BinaryOperator>(stmt);
             if (binaryOperator->isAssignmentOp()) {
               const clang::Stmt* lhs = binaryOperator->getLHS();
-              string stmtString = GetSourceLevelStmtString(lhs, Result);
+              string stmtString = GetSourceLevelStmtString(lhs);
               if (stmtString.compare(incident) == 0)
                 incidentBlocks.push_back(blk);
             }
           } else if (incidentType.compare("RETURN") == 0 && stmtClass.compare("ReturnStmt") == 0) {
             const clang::ReturnStmt* returnStmt = cast<clang::ReturnStmt>(stmt);
             const clang::Stmt* returnValue = returnStmt->getRetValue();
-            returnValues.push_back(GetSourceLevelStmtString(returnValue, Result));
+            returnValues.push_back(GetSourceLevelStmtString(returnValue));
             incidentBlocks.push_back(blk);
           }
         }
@@ -539,7 +585,7 @@ class MyCallback : public clang::ast_matchers::MatchFinder::MatchCallback {
       if (incidentType.compare("RETURN") == 0)
         c.push_back(returnValues[i]);
 
-      BottomUpCFGTraverse((*blk), CFG->getEntry().getBlockID(), 0, Result, c, paths);
+      BottomUpCFGTraverse((*blk), cfg->getEntry().getBlockID(), 0, c, paths);
 
       cout << "Constrains:" << endl;
       for (vector<string> constraints: paths) {
@@ -580,6 +626,7 @@ public:
 };
 
 SymbolTable *SymbolTable::instance = 0;
+Context *Context::instance = 0;
 
 int main(int argc, const char **argv) {
 
