@@ -36,6 +36,7 @@
 #include <map>
 #include <set>
 #include <stdlib.h>
+#include <thread>
 
 using namespace std;
 
@@ -69,117 +70,6 @@ string functionName, incident, incidentType;
 //  string str;
 //};
 
-class SymbolTable {
-public:
-  static SymbolTable *getInstance() {
-    if (!instance)
-      instance = new SymbolTable;
-    return instance;
-  }
-
-  string addVariableSymbol(string var, string type) {
-
-    string varSymbol = "";
-
-    if (this->getVariableSymbols(var).size() == 0) {
-      if (type.compare("LVALUE"))
-        varSymbol = this->insertNewSymbol(var);
-    } else {
-      if (type.compare("LVALUE"))
-        varSymbol = this->getVariableLastSymbol(var);
-      else {
-        if (this->getVariableType(var).compare("LVALUE"))
-          varSymbol = this->getVariableLastSymbol(var);
-        else
-          varSymbol = this->insertNewSymbol(var);
-      }
-    }
-
-    if (this->getVariableType(var).compare("LVALUE"))
-      this->setVariableType(var, type);
-
-    return varSymbol;
-  }
-
-  map<string, pair<set<string>, string>> getTable() {
-    return this->symbolTable;
-  }
-
-  void setTable(map<string, pair<set<string>, string>> table) {
-    this->symbolTable = table;
-  }
-
-  void print() {
-    map<string, pair<set<string>, string>> st;
-    for (map<string, pair<set<string>, string>>::const_iterator it = symbolTable.begin(); it != symbolTable.end(); ++it) {
-      cout << it->first << ": (";
-      pair<set<string>, string> symbols = it->second;
-      for (string s: symbols.first) {
-        cout << s << ' ';
-      }
-      cout << ") " << symbols.second << endl;
-    }
-  }
-
-protected:
-  string insertNewSymbol(string variable) {
-    set<string> variableSymbols = this->getVariableSymbols(variable);
-    string s = this->symbol + to_string(variableSymbols.size()) + "_" + variable;
-    variableSymbols.insert(s);
-    this->setVariableSymbols(variable, variableSymbols);
-    return s;
-  }
-
-  string getVariableLastSymbol(string variable) {
-    set<string> variableSymbols = this->getVariableSymbols(variable);
-    return *--variableSymbols.end();
-  }
-
-  set<string> getVariableSymbols(string variable) {
-    return this->symbolTable[variable].first;
-  }
-
-  string getVariableType(string variable) {
-    return this->symbolTable[variable].second;
-  }
-
-  void setVariableType(string variable, string type) {
-    this->symbolTable[variable].second = type;
-  }
-
-  void setVariableSymbols(string variable, set<string> symbols) {
-    this->symbolTable[variable].first = symbols;
-  }
-private:
-  SymbolTable() {
-    map<string, pair<set<string>, string>> st;
-    symbol = "s";
-    symbolTable = st;
-  }
-  static SymbolTable *instance;
-  string symbol;
-  map<string, pair<set<string>, string>> symbolTable;
-};
-
-class Statement {
-public:
-  Statement(const clang::Stmt* statement) : statement(statement) {}
-private:
-  const clang::Stmt* statement;
-};
-
-class Constraint {
-public:
-  Constraint() {};
-
-  void addConstraint(string constraint) {
-    this->constraints.push_back(constraint);
-  }
-
-private:
-  vector<string> constraints;
-};
-
 class Context {
 public:
 
@@ -202,7 +92,210 @@ private:
   clang::ast_matchers::MatchFinder::MatchResult* context;
 };
 
+string getStatementString(const clang::Stmt* stmt) {
+  Context *context = context->getInstance();
+  clang::SourceRange range = stmt->getSourceRange();
+  const clang::SourceManager *SM = context->getContext()->SourceManager;
+  llvm::StringRef ref = clang::Lexer::getSourceText(clang::CharSourceRange::getTokenRange(range), *SM,
+                                                    clang::LangOptions());
 
+  return ref.str();
+}
+
+class SymbolTable {
+public:
+  static SymbolTable *getInstance() {
+    if (!instance)
+      instance = new SymbolTable;
+    return instance;
+  }
+
+  string addVariableSymbol(string var, string type) {
+    /**
+     * Description
+     * 1. If variable symbol has not been generated yet
+     *      If the variable type is not LVALUE -> create new symbol
+     * 2. If variable symbol has been generated yet
+     *      If type is not LVALUE -> get its last symbol
+     * 3. If variable symbol has been generated yet
+     *      If type is LVALUE
+     *          If last type is not LVALUE -> get its last symbol
+     * 4. If variable symbol has been generated yet
+     *      If type is LVALUE
+     *          If last type is LVALUE -> create new symbol
+     */
+    string varSymbol = "";
+    if (this->type.compare("RETURN") == 0) {
+      cout << "Creating symbol for variable" << endl;
+      int paramIndex = this->isInParams(var);
+      if (paramIndex != -1) {
+        string passParam = this->passParams[paramIndex];
+        cout << "Found that this variable is a passed variable: " << passParam << endl;
+        this->type = "";
+        varSymbol = addVariableSymbol(passParam, type);
+        setVariableSymbol(var, varSymbol);
+        this->type = "RETURN";
+      }
+    } else {
+      if (this->getVariableSymbols(var).size() == 0) {
+        if (type.compare("LVALUE"))
+          varSymbol = this->insertNewSymbol(var);
+      } else {
+        if (type.compare("LVALUE"))
+          varSymbol = this->getVariableLastSymbol(var);
+        else {
+          if (this->getVariableType(var).compare("LVALUE"))
+            varSymbol = this->getVariableLastSymbol(var);
+          else
+            varSymbol = this->insertNewSymbol(var);
+        }
+      }
+    }
+
+    if (this->getVariableType(var).compare("LVALUE"))
+      this->setVariableType(var, type);
+
+    return varSymbol;
+  }
+
+  map<string, pair<set<string>, string>> getTable() {
+    return this->symbolTable;
+  }
+
+  void setTable(map<string, pair<set<string>, string>> table) {
+    this->symbolTable = table;
+  }
+
+  void setType(string type) {
+    this->type = type;
+  }
+
+  void setParams(vector<string> params) {
+    this->params = params;
+  }
+
+  void setPassParams(vector<string> passParams) {
+    this->passParams = passParams;
+  }
+
+  void readSymbolTable() {
+    string line;
+    ifstream infile("symbols.txt");
+
+    bool firstLine = true;
+    bool lastLine = false;
+    string symbol;
+    set<string> symbols;
+
+    while (getline(infile, line)) {
+      if (firstLine) {
+        symbol = line;
+        firstLine = false;
+      } else if (line.compare("TYPE") == 0) {
+        lastLine = true;
+      } else if (line.compare("---------------") == 0) {
+        firstLine = true;
+      } else if (lastLine) {
+        lastLine = false;
+        pair<set<string>, string> p(symbols, line);
+        symbolTable[symbol] = p;
+        symbols.clear();
+      } else {
+        symbols.insert(line);
+      }
+    }
+  }
+
+  void printFile() {
+    string fileName = "symbols.txt";
+    ofstream symbolFile;
+    symbolFile.open(fileName, ofstream::out | ofstream::trunc);
+    if (symbolFile.is_open()) {
+      for (map<string, pair<set<string>, string>>::const_iterator it = symbolTable.begin(); it != symbolTable.end(); ++it) {
+        symbolFile << it->first << endl;
+        pair<set<string>, string> symbols = it->second;
+        for (string s: symbols.first) {
+          symbolFile << s << endl;
+        }
+        symbolFile << "TYPE" << endl;
+        symbolFile << symbols.second << endl;
+        symbolFile << "---------------\n";
+
+      }
+      symbolFile.close();
+    }
+  }
+
+  void print() {
+    for (map<string, pair<set<string>, string>>::const_iterator it = symbolTable.begin(); it != symbolTable.end(); ++it) {
+      cout << it->first << ": (";
+      pair<set<string>, string> symbols = it->second;
+      for (string s: symbols.first) {
+        cout << s << ' ';
+      }
+      cout << ") " << symbols.second << endl;
+    }
+  }
+
+protected:
+  string insertNewSymbol(string variable) {
+    if (this->type.compare("RETURN") == 0) {
+      this->symbol = "ref";
+    }
+    set<string> variableSymbols = this->getVariableSymbols(variable);
+    string s = this->symbol + to_string(variableSymbols.size()) + "_" + variable;
+    variableSymbols.insert(s);
+    this->setVariableSymbols(variable, variableSymbols);
+    this->symbol = "s";
+    return s;
+  }
+
+  string getVariableLastSymbol(string variable) {
+    set<string> variableSymbols = this->getVariableSymbols(variable);
+    return *--variableSymbols.end();
+  }
+
+  set<string> getVariableSymbols(string variable) {
+    return this->symbolTable[variable].first;
+  }
+
+  string getVariableType(string variable) {
+    return this->symbolTable[variable].second;
+  }
+
+  int isInParams(string variable) {
+    for (int i = 0; i < params.size(); ++i)
+      if (params[i].compare(variable) == 0)
+        return i;
+    return -1;
+  }
+
+  void setVariableType(string variable, string type) {
+    this->symbolTable[variable].second = type;
+  }
+
+  void setVariableSymbol(string variable, string symbol) {
+    set<string> variableSymbols = this->getVariableSymbols(variable);
+    variableSymbols.insert(symbol);
+    this->symbolTable[variable].first = variableSymbols;
+  }
+
+  void setVariableSymbols(string variable, set<string> symbols) {
+    this->symbolTable[variable].first = symbols;
+  }
+private:
+  SymbolTable() {
+    map<string, pair<set<string>, string>> st;
+    symbol = "s";
+    symbolTable = st;
+  }
+  string type;
+  vector<string> params;
+  vector<string> passParams;
+  static SymbolTable *instance;
+  string symbol;
+  map<string, pair<set<string>, string>> symbolTable;
+};
 
 string removeSpaces(string str) {
   str.erase(remove(str.begin(), str.end(), ' '), str.end());
@@ -223,16 +316,6 @@ vector<string> split(string s, char delimiter) {
   }
   substrings.push_back(word);
   return substrings;
-}
-
-string GetSourceLevelStmtString(const clang::Stmt* stmt) {
-  Context *context = context->getInstance();
-  clang::SourceRange range = stmt->getSourceRange();
-  const clang::SourceManager *SM = context->getContext()->SourceManager;
-  llvm::StringRef ref = clang::Lexer::getSourceText(clang::CharSourceRange::getTokenRange(range), *SM,
-                                                    clang::LangOptions());
-
-  return ref.str();
 }
 
 int isInBlock(const clang::CFGBlock* block, unsigned int previousBlockId) {
@@ -268,11 +351,7 @@ void replaceVariablesBySymbols(string& stmt, set<pair<string, string>>& vars) {
   }
 }
 
-void getStmtOperands(
-    const clang::Stmt* stmt,
-    set<pair<string, string>>& operands,
-    string type
-) {
+void getStmtOperands(const clang::Stmt* stmt, set<pair<string, string>>& operands, string type) {
 
   const string stmtClass(stmt->getStmtClassName());
   if (stmtClass.compare("BinaryOperator") == 0) {
@@ -292,7 +371,7 @@ void getStmtOperands(
   } else if (stmtClass.compare("ImplicitCastExpr") == 0 || stmtClass.compare("DeclRefExpr") == 0) {
 
     if (type.compare("")) {
-      string var = GetSourceLevelStmtString(stmt);
+      string var = getStatementString(stmt);
 
       SymbolTable *st = st->getInstance();
       string varSymbol = st->addVariableSymbol(var, type);
@@ -327,10 +406,7 @@ void getStmtOperands(
   }
 }
 
-const string GetTerminatorCondition(
-    const clang::CFGBlock* cfgBlock,
-    unsigned int previousBlockId
-    ) {
+const string GetTerminatorCondition(const clang::CFGBlock* cfgBlock, unsigned int previousBlockId) {
   const clang::Stmt *terminatorStmt = cfgBlock->getTerminatorStmt();
   if (terminatorStmt) {
     if (terminatorStmt->getStmtClass() == clang::Stmt::IfStmtClass) {
@@ -340,9 +416,9 @@ const string GetTerminatorCondition(
 
       string stmt;
       if (isInBlock(cfgBlock, previousBlockId) == 0)
-        stmt = GetSourceLevelStmtString(cfgBlock->getTerminatorCondition());
+        stmt = getStatementString(cfgBlock->getTerminatorCondition());
       else
-        stmt = "!(" + GetSourceLevelStmtString(cfgBlock->getTerminatorCondition()) + ")";
+        stmt = "!(" + getStatementString(cfgBlock->getTerminatorCondition()) + ")";
 
       replaceVariablesBySymbols(stmt, operands);
       return stmt;
@@ -352,27 +428,33 @@ const string GetTerminatorCondition(
 }
 
 bool hasFunctionCall(
-    const clang::Stmt* stmt,
-    string stmtClass,
-    vector<string>& names
-    ) {
+    const clang::Stmt* stmt, string stmtClass,
+    vector<string>& names,
+    vector<vector<string>>& paramNames
+) {
   if (stmtClass.compare("BinaryOperator") == 0) {
     const clang::BinaryOperator *binaryOperator = cast<clang::BinaryOperator>(stmt);
     const clang::Stmt *lhs = binaryOperator->getLHS();
     const clang::Stmt *rhs = binaryOperator->getRHS();
-    return hasFunctionCall(lhs, lhs->getStmtClassName(), names) ||
-           hasFunctionCall(rhs, rhs->getStmtClassName(), names);
+    return hasFunctionCall(lhs, lhs->getStmtClassName(), names, paramNames) ||
+           hasFunctionCall(rhs, rhs->getStmtClassName(), names, paramNames);
   } else if (stmtClass.compare("CallExpr") == 0) {
-    const clang::Stmt *callee = cast<clang::CallExpr>(stmt)->getCallee();
-    names.push_back(GetSourceLevelStmtString(callee));
+    const clang::CallExpr* callExpr = cast<clang::CallExpr>(stmt);
+
+    const clang::Stmt *callee = callExpr->getCallee();
+    const clang::Expr* const* args = callExpr->getArgs();
+
+    vector<string> params;
+    for (unsigned int i = 0; i < callExpr->getNumArgs(); ++i)
+      params.push_back(getStatementString(args[i]));
+    paramNames.push_back(params);
+    names.push_back(getStatementString(callee));
     return true;
   }
   return false;
 }
 
-vector<vector<string>> addFunctionConstraints(
-    vector<string>& returnValues
-    ) {
+vector<vector<string>> addFunctionConstraints(vector<string>& returnValues) {
   string line;
   ifstream infile("return_constraints.txt");
   bool firstLine = true;
@@ -391,14 +473,31 @@ vector<vector<string>> addFunctionConstraints(
       constraints.push_back(line);
     }
   }
-
   return constraintsList;
 }
 
-vector<vector<string>> GetBlockCondition(
-    const clang::CFGBlock* block,
-    vector<string>& constraints
-) {
+vector<string> readParamsFromFile() {
+  string line;
+  ifstream infile("params.txt");
+
+  vector <string> params;
+
+  while (getline(infile, line))
+    params.push_back(line);
+  return params;
+}
+
+void writeParametersToFile(vector<string> params) {
+  string fileName = "params.txt";
+  ofstream paramsFile (fileName, ios_base::app);
+  if (paramsFile.is_open()) {
+    for (string p: params)
+      paramsFile << p << endl;
+    paramsFile.close();
+  }
+}
+
+vector<vector<string>> GetBlockCondition(const clang::CFGBlock* block, vector<string>& constraints) {
   vector<vector<string>> constraintsList;
   constraintsList.push_back(constraints);
 
@@ -408,19 +507,29 @@ vector<vector<string>> GetBlockCondition(
       const clang::Stmt *stmt = SE->getStmt();
       const string stmtClass(stmt->getStmtClassName());
 
-
       set<pair<string, string>> operands;
       getStmtOperands(stmt, operands, "");
 
-      string statement = GetSourceLevelStmtString(stmt);
+      string statement = getStatementString(stmt);
       pair<string, string> statementClassPair(statement, stmtClass);
 
       vector<string> funcNames;
-      if (hasFunctionCall(stmt, stmtClass, funcNames) && stmtClass.compare("CallExpr")) {
+      vector<vector<string>> paramNames;
+
+      if (hasFunctionCall(stmt, stmtClass, funcNames, paramNames) && stmtClass.compare("CallExpr")) {
         cout << "Function names: " << endl;
+        int i = 0;
         for (string name: funcNames) {
+
+          SymbolTable* se = se->getInstance();
+          se->printFile();
+          writeParametersToFile(paramNames[i]);
+
           string sysCall = "./cfg test.cpp -- " + name + " c RETURN";
           system(sysCall.c_str());
+
+          se->readSymbolTable();
+
           vector<string> returnValues;
           vector<vector<string>> functionConstraintsList = addFunctionConstraints(returnValues);
 
@@ -446,6 +555,7 @@ vector<vector<string>> GetBlockCondition(
             }
           }
           constraintsList = newConstraintsList;
+          i++;
         }
       } else {
         if (stmtClass.compare("DeclStmt") == 0) {
@@ -481,42 +591,6 @@ vector<vector<string>> GetBlockCondition(
   return constraintsList;
 }
 
-vector<string> copyVector(vector<string>& v) {
-  vector<string> v2;
-  for (int i = 0; i < v.size(); i++)
-    v2.push_back(v[i]);
-  return v2;
-}
-
-void BottomUpCFGTraverse(
-    const clang::CFGBlock* startBlock,
-    unsigned int beginBlockId,
-    unsigned int previousBlockId,
-    vector<string>& constraints,
-    vector<vector<string>>& paths
-    ) {
-  cout << "Visiting block " << startBlock->getBlockID() << endl;
-  if (startBlock->getBlockID() == beginBlockId) {
-    return paths.push_back(constraints);
-  }
-  if (previousBlockId != 0) {
-    const string terminatorCondition = GetTerminatorCondition(startBlock, previousBlockId);
-    if (terminatorCondition.compare(""))
-      constraints.push_back(terminatorCondition);
-  }
-  vector<vector<string>> constraintsList = GetBlockCondition(startBlock, constraints);
-
-  SymbolTable *st = st->getInstance();
-  map<string, pair<set<string>, string>>tableCopy = st->getTable();
-  for (clang::CFGBlock::const_pred_iterator I = startBlock->pred_begin(), E = startBlock->pred_end(); I != E; I++) {
-    for (vector<string> c: constraintsList) {
-      vector<string> constraintsCopy = copyVector(c);
-      st->setTable(tableCopy);
-      BottomUpCFGTraverse((*I).getReachableBlock(), beginBlockId, startBlock->getBlockID(), constraintsCopy, paths);
-    }
-  }
-}
-
 void WriteConstraintsToFile(vector<string>& constraints) {
   string fileName = incidentType.compare("RETURN") ? "constraints.txt" : "return_constraints.txt";
   ofstream constraintsFile (fileName, ios_base::app);
@@ -528,75 +602,234 @@ void WriteConstraintsToFile(vector<string>& constraints) {
   }
 }
 
-class MyCallback : public clang::ast_matchers::MatchFinder::MatchCallback {
- public:
-  MyCallback() {}
-  void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) {
+class Incident {
+public:
+  Incident(string incident, string type) : incident(incident), type(type) {}
 
-    Context *context = context->getInstance();
-    context->setContext(Result);
+  virtual bool hasIncident(const clang::Stmt* stmt, vector<string>& incidentValues) = 0;
 
-    const auto* Function = Result.Nodes.getNodeAs<clang::FunctionDecl>("fn");
-    const auto cfg = clang::CFG::buildCFG(Function,
-                                        Function->getBody(),
-                                        Result.Context,
-                                        clang::CFG::BuildOptions());
+  virtual void print() = 0;
 
+protected:
+  string incident;
+  string type;
+};
 
-    vector<const clang::CFGBlock*> incidentBlocks;
-    vector<string> returnValues;
+class CallIncident : public Incident {
+public:
+  CallIncident(string incident) : Incident(incident, "CALL") {}
 
-    for (const auto* blk : *cfg) {
-      for (clang::CFGBlock::const_iterator I = blk->begin(), E = blk->end(); I != E ; ++I) {
+  bool hasIncident(const clang::Stmt* stmt, vector<string>& incidentValues) {
+    const string stmtClass(stmt->getStmtClassName());
+    if (stmtClass.compare("CallExpr") == 0) {
+      const clang::Stmt *callee = cast<clang::CallExpr>(stmt)->getCallee();
+      string stmtString = getStatementString(callee);
+      if (stmtString.compare(this->incident) == 0)
+        return true;
+    }
+    return false;
+  }
+  void print() {
+    cout << "Call Incident" << endl;
+  }
+};
+
+class WriteIncident: public Incident {
+public:
+  WriteIncident(string incident) : Incident(incident, "WRITE") {}
+
+  bool hasIncident(const clang::Stmt* stmt, vector<string>& incidentValues) {
+    const string stmtClass(stmt->getStmtClassName());
+    if (stmtClass.compare("BinaryOperator") == 0) {
+      const clang::BinaryOperator* binaryOperator = cast<clang::BinaryOperator>(stmt);
+      if (binaryOperator->isAssignmentOp()) {
+        const clang::Stmt* lhs = binaryOperator->getLHS();
+        string stmtString = getStatementString(lhs);
+        if (stmtString.compare(this->incident) == 0)
+          return true;
+      }
+    }
+    return false;
+  }
+
+  void print() {
+    cout << "Write Incident" << endl;
+  }
+};
+
+class ReturnIncident: public Incident {
+public:
+  ReturnIncident(string incident) : Incident(incident, "RETURN") {}
+
+  bool hasIncident(const clang::Stmt* stmt, vector<string>& incidentValues) {
+    const string stmtClass(stmt->getStmtClassName());
+    if (stmtClass.compare("ReturnStmt") == 0) {
+      const clang::ReturnStmt* returnStmt = cast<clang::ReturnStmt>(stmt);
+      const clang::Stmt* returnValue = returnStmt->getRetValue();
+      incidentValues.push_back(getStatementString(returnValue));
+      return true;
+    }
+    return false;
+  }
+
+  void print() {
+    cout << "Return Incident" << endl;
+  }
+};
+
+Incident* createIncident() {
+  if (incidentType.compare("CALL") == 0) {
+    return new CallIncident(incident);
+  }
+  if (incidentType.compare("WRITE") == 0) {
+    return new WriteIncident(incident);
+  }
+  if (incidentType.compare("RETURN") == 0) {
+    return new ReturnIncident(incident);
+  }
+  return nullptr;
+}
+
+class Path {
+public:
+  Path(vector<string> constraints) {
+    this->constraints = constraints;
+  }
+
+  vector<string> getConstraints() {
+    return this->constraints;
+  }
+private:
+  vector<string> constraints;
+};
+
+class CFGHandler {
+public:
+  CFGHandler(const unique_ptr<clang::CFG>& cfg) {
+    this->incident = createIncident();
+    this->cfg = &cfg;
+  }
+
+  void findIncidents() {
+    for (const auto* blk : **(this->cfg)) {
+      for (clang::CFGBlock::const_iterator I = blk->begin(), E = blk->end(); I != E; ++I) {
         clang::CFGElement El = *I;
         if (auto SE = El.getAs<clang::CFGStmt>()) {
           const clang::Stmt *stmt = SE->getStmt();
-          const string stmtClass(stmt->getStmtClassName());
-          cout << GetSourceLevelStmtString(stmt) << " stmt type: " << stmtClass << endl;
-          if (incidentType.compare("CALL") == 0 && stmtClass.compare("CallExpr") == 0) {
-            const clang::Stmt *callee = cast<clang::CallExpr>(stmt)->getCallee();
-            string stmtString = GetSourceLevelStmtString(callee);
-            if (stmtString.compare(incident) == 0)
-              incidentBlocks.push_back(blk);
-          } else if (incidentType.compare("WRITE") == 0 && stmtClass.compare("BinaryOperator") == 0) {
-            const clang::BinaryOperator* binaryOperator = cast<clang::BinaryOperator>(stmt);
-            if (binaryOperator->isAssignmentOp()) {
-              const clang::Stmt* lhs = binaryOperator->getLHS();
-              string stmtString = GetSourceLevelStmtString(lhs);
-              if (stmtString.compare(incident) == 0)
-                incidentBlocks.push_back(blk);
-            }
-          } else if (incidentType.compare("RETURN") == 0 && stmtClass.compare("ReturnStmt") == 0) {
-            const clang::ReturnStmt* returnStmt = cast<clang::ReturnStmt>(stmt);
-            const clang::Stmt* returnValue = returnStmt->getRetValue();
-            returnValues.push_back(GetSourceLevelStmtString(returnValue));
-            incidentBlocks.push_back(blk);
+          if (this->incident->hasIncident(stmt, this->returnValues)) {
+            this->incidentBlocks.push_back(blk);
           }
         }
       }
       blk->dump();
     }
-    int i = 0;
-    for (vector<const clang::CFGBlock*>::iterator blk = incidentBlocks.begin(); blk != incidentBlocks.end(); ++blk) {
-      cout << "Incident block: " << (*blk)->getBlockID() << endl;
+  }
 
-      vector<string> c;
-      vector<vector<string>> paths;
-      if (incidentType.compare("RETURN") == 0)
-        c.push_back(returnValues[i]);
-
-      BottomUpCFGTraverse((*blk), cfg->getEntry().getBlockID(), 0, c, paths);
-
-      cout << "Constrains:" << endl;
-      for (vector<string> constraints: paths) {
-        WriteConstraintsToFile(constraints);
-        cout << "Sub Path: ";
-        for (string s: constraints)
-          cout << s << " & ";
-        cout << endl;
-      }
-      i++;
+  void bottomUpTraverse(const clang::CFGBlock* startBlock, unsigned int previousBlockId, vector<string>& constraints) {
+    cout << "Visiting Block " << startBlock->getBlockID() << endl;
+    if (startBlock->getBlockID() == this->getEntryBlockId()) {
+      return this->paths.push_back(Path(constraints));
     }
+    if (previousBlockId != 0) {
+      const string terminatorCondition = GetTerminatorCondition(startBlock, previousBlockId);
+      if (terminatorCondition.compare(""))
+        constraints.push_back(terminatorCondition);
+    }
+    vector<vector<string>> constraintsList = GetBlockCondition(startBlock, constraints);
+
+    SymbolTable *st = st->getInstance();
+    map<string, pair<set<string>, string>>tableCopy = st->getTable();
+    for (clang::CFGBlock::const_pred_iterator I = startBlock->pred_begin(), E = startBlock->pred_end(); I != E; I++) {
+      for (vector<string> c: constraintsList) {
+        vector<string> constraintsCopy = c;
+        st->setTable(tableCopy);
+        this->bottomUpTraverse((*I).getReachableBlock(), startBlock->getBlockID(), constraintsCopy);
+      }
+    }
+  }
+
+  void collectConstraints() {
+    for (vector<const clang::CFGBlock*>::iterator blk = this->incidentBlocks.begin(); blk != this->incidentBlocks.end(); ++blk) {
+
+      cout << "Incident Block: " << (*blk)->getBlockID() << endl;
+
+      this->paths.clear();
+      vector<string> pathConstraints;
+
+      if (incidentType.compare("RETURN") == 0)
+        pathConstraints.push_back(this->returnValues[blk - this->incidentBlocks.begin()]);
+
+      this->bottomUpTraverse((*blk), 0, pathConstraints);
+      this->writePaths();
+    }
+  }
+
+  void writePaths() {
+    cout << "Constrains:" << endl;
+    for (Path path: this->paths) {
+      vector<string> constraints = path.getConstraints();
+      WriteConstraintsToFile(constraints);
+      cout << "Sub Path: ";
+      for (string s: constraints)
+        cout << s << " & ";
+      cout << endl;
+    }
+  }
+
+  unsigned int getEntryBlockId() {
+    return (*(this->cfg))->getEntry().getBlockID();
+  }
+
+  vector<const clang::CFGBlock*> getIncidentBlocks() {
+    return this->incidentBlocks;
+  }
+
+  vector<string> getReturnValues() {
+    return this->returnValues;
+  }
+
+private:
+  const unique_ptr<clang::CFG>* cfg;
+  vector<Path> paths;
+  Incident* incident;
+  vector<string> returnValues;
+  vector<const clang::CFGBlock*> incidentBlocks;
+};
+
+class MyCallback : public clang::ast_matchers::MatchFinder::MatchCallback {
+ public:
+  MyCallback() {}
+  void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) {
+    cout << "Hello " << functionName << endl;
+    Context *context = context->getInstance();
+    context->setContext(Result);
+
+    const auto* Function = Result.Nodes.getNodeAs<clang::FunctionDecl>("fn");
+
+
+    if (incidentType.compare("RETURN") == 0) {
+      SymbolTable* se = se->getInstance();
+      se->readSymbolTable();
+      vector<string> passParams = readParamsFromFile();
+      vector<string> params;
+      for (clang::FunctionDecl::param_const_iterator I = Function->param_begin(), E = Function->param_end(); I != E; ++I) {
+        string name = (*I)->getNameAsString();
+        params.push_back(name);
+      }
+      se->setType("RETURN");
+      se->setParams(params);
+      se->setPassParams(passParams);
+    }
+
+    const auto cfg = clang::CFG::buildCFG(Function,
+                                        Function->getBody(),
+                                        Result.Context,
+                                        clang::CFG::BuildOptions());
+
+    CFGHandler cfgHandler(cfg);
+
+    cfgHandler.findIncidents();
+    cfgHandler.collectConstraints();
   }
 };
 
@@ -619,11 +852,21 @@ private:
 
 class MyFrontendAction : public clang::ASTFrontendAction {
 public:
+
   std::unique_ptr <clang::ASTConsumer>
   virtual CreateASTConsumer(clang::CompilerInstance &, llvm::StringRef) override {
     return std::make_unique<MyConsumer>();
   }
 };
+
+int executeAction(int argc, const char **argv) {
+
+  auto CFGCategory = llvm::cl::OptionCategory("CFG");
+  clang::tooling::CommonOptionsParser OptionsParser(argc, argv, CFGCategory);
+  clang::tooling::ClangTool Tool(OptionsParser.getCompilations(), OptionsParser.getSourcePathList());
+
+  return Tool.run(clang::tooling::newFrontendActionFactory<MyFrontendAction>().get());
+}
 
 SymbolTable *SymbolTable::instance = 0;
 Context *Context::instance = 0;
@@ -634,9 +877,10 @@ int main(int argc, const char **argv) {
   incident = *(&argv[4]);
   incidentType = *(&argv[5]);
 
-  auto CFGCategory = llvm::cl::OptionCategory("CFG");
-  clang::tooling::CommonOptionsParser OptionsParser(argc, argv, CFGCategory);
-  clang::tooling::ClangTool Tool(OptionsParser.getCompilations(), OptionsParser.getSourcePathList());
+  executeAction(argc, argv);
 
-  return Tool.run(clang::tooling::newFrontendActionFactory<MyFrontendAction>().get());
+  SymbolTable* se = se->getInstance();
+  se->printFile();
+
+  return 0;
 }
