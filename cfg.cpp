@@ -703,9 +703,170 @@ private:
   vector<string> constraints;
 };
 
+class StatementHandler {
+public:
+  StatementHandler() {}
+
+  void replaceVariables(string& stmt, set<pair<string, string>>& vars) {
+    for (pair<string, string> p: vars) {
+      regex e(p.first + "((?=\\W)|$)");
+      stmt = regex_replace(stmt, e, p.second);
+    }
+  }
+
+  void replaceDeclaration(string& statement) {
+    regex e("^\\S*");
+    statement = regex_replace(statement, e, "");
+  }
+
+  void replaceStaticSingleAssignment(
+      string& statement,
+      set<pair<string, string>>& operands,
+      set<pair<string, string>>& duplicate
+      ) {
+
+    vector<string> splitStatement = split(statement, '=');
+    string lhs = splitStatement[0], rhs = splitStatement[1];
+
+    this->replaceVariables(lhs, duplicate);
+    this->replaceVariables(rhs, operands);
+
+    statement = lhs + "=" + rhs;
+  }
+
+  void replaceStatement(string& statement, set<pair<string, string>>& operands) {
+    set<pair<string, string>> duplicate = findPairsWithSameFirst(operands);
+    if (duplicate.size())
+      return this->replaceStaticSingleAssignment(statement, operands, duplicate);
+    return this->replaceVariables(statement, operands);
+  }
+};
+
+class CFGBlockHandler {
+public:
+  CFGBlockHandler() {
+    this->statementHandler = StatementHandler();
+  }
+
+  bool isInIf(const clang::CFGBlock* block, unsigned int previousBlockId) {
+    int i = 0;
+    for (clang::CFGBlock::const_succ_iterator I = block->succ_begin(), E = block->succ_end(); I != E; I++) {
+      if (((*I).getReachableBlock()->getBlockID() == previousBlockId) && i == 0)
+        return true;
+      return false;
+      i++;
+    }
+    return false;
+  }
+
+  vector<vector<string>> getBlockCondition(const clang::CFGBlock* block, vector<string>& constraints) {
+
+//    vector<vector<string>> constraintsList;
+    constraintsList.clear();
+    constraintsList.push_back(constraints);
+
+    for (clang::CFGBlock::const_reverse_iterator I = block->rbegin(), E = block->rend(); I != E ; ++I) {
+      clang::CFGElement El = *I;
+      if (auto SE = El.getAs<clang::CFGStmt>()) {
+        const clang::Stmt *stmt = SE->getStmt();
+        const string stmtClass(stmt->getStmtClassName());
+
+        set<pair<string, string>> operands;
+        getStmtOperands(stmt, operands, "");
+
+        string statement = getStatementString(stmt);
+        pair<string, string> statementClassPair(statement, stmtClass);
+
+        vector<string> funcNames;
+        vector<vector<string>> paramNames;
+
+        if (stmtClass.compare("CallExpr") && hasFunctionCall(stmt, stmtClass, funcNames, paramNames)) {
+          cout << "Function names: " << endl;
+          int i = 0;
+          for (string name: funcNames) {
+
+            SymbolTable* se = se->getInstance();
+            se->printFile();
+            writeParametersToFile(paramNames[i]);
+
+            string sysCall = "./cfg test.cpp -- " + name + " c RETURN";
+            system(sysCall.c_str());
+
+            se->readSymbolTable();
+
+            vector<string> returnValues;
+            vector<vector<string>> functionConstraintsList = addFunctionConstraints(returnValues);
+
+            int index = 0;
+            for (string returnValue: returnValues) {
+              if (stmtClass.compare("DeclStmt") == 0) {
+                regex e("^\\S*");
+                statement = regex_replace(statement, e, "");
+              }
+              regex e(name + "\\((.*)\\)");
+              string ts = regex_replace(statement, e, returnValue);
+              replaceVariablesBySymbols(ts, operands);
+              functionConstraintsList[index].insert(functionConstraintsList[index].begin(), ts);
+              index++;
+            }
+
+            vector<vector<string>> newConstraintsList;
+            for (vector<string> c: constraintsList) {
+              for (vector<string> fc: functionConstraintsList) {
+                vector<string> newConstraints = c;
+                newConstraints.insert(newConstraints.end(), fc.begin(), fc.end());
+                newConstraintsList.push_back(newConstraints);
+              }
+            }
+            constraintsList = newConstraintsList;
+            i++;
+          }
+        }
+        else {
+          if (stmtClass.compare("DeclStmt") == 0)
+            this->statementHandler.replaceDeclaration(statement);
+
+          if (operands.size()) {
+            set<pair<string, string>> duplicate = findPairsWithSameFirst(operands);
+            this->statementHandler.replaceStatement(statement, operands);
+            for (int i = 0; i < constraintsList.size(); i++) {
+              constraintsList[i].push_back(statement);
+            }
+          }
+        }
+      }
+    }
+    return constraintsList;
+  }
+
+  const string getTerminatorCondition(const clang::CFGBlock* block, unsigned int previousBlockId) {
+    const clang::Stmt *terminatorStmt = block->getTerminatorStmt();
+    if (terminatorStmt && terminatorStmt->getStmtClass() == clang::Stmt::IfStmtClass) {
+
+      set<pair<string, string>> operands;
+      getStmtOperands(block->getTerminatorCondition(), operands, "COND");
+
+      string stmt;
+      if (this->isInIf(block, previousBlockId))
+        stmt = getStatementString(block->getTerminatorCondition());
+      else
+        stmt = "!(" + getStatementString(block->getTerminatorCondition()) + ")";
+
+      replaceVariablesBySymbols(stmt, operands);
+      return stmt;
+    }
+    return "";
+  }
+
+private:
+  vector<vector<string>> constraintsList;
+  StatementHandler statementHandler;
+};
+
 class CFGHandler {
 public:
   CFGHandler(const unique_ptr<clang::CFG>& cfg) {
+    this->cfgBlockHandler = CFGBlockHandler();
     this->incident = createIncident();
     this->cfg = &cfg;
   }
@@ -731,11 +892,11 @@ public:
       return this->paths.push_back(Path(constraints));
     }
     if (previousBlockId != 0) {
-      const string terminatorCondition = GetTerminatorCondition(startBlock, previousBlockId);
+      const string terminatorCondition = this->cfgBlockHandler.getTerminatorCondition(startBlock, previousBlockId);
       if (terminatorCondition.compare(""))
         constraints.push_back(terminatorCondition);
     }
-    vector<vector<string>> constraintsList = GetBlockCondition(startBlock, constraints);
+    vector<vector<string>> constraintsList = this->cfgBlockHandler.getBlockCondition(startBlock, constraints);
 
     SymbolTable *st = st->getInstance();
     map<string, pair<set<string>, string>>tableCopy = st->getTable();
@@ -790,6 +951,7 @@ public:
 
 private:
   const unique_ptr<clang::CFG>* cfg;
+  CFGBlockHandler cfgBlockHandler;
   vector<Path> paths;
   Incident* incident;
   vector<string> returnValues;
