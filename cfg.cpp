@@ -102,6 +102,129 @@ string getStatementString(const clang::Stmt* stmt) {
   return ref.str();
 }
 
+class FileSystem {
+public:
+  FileSystem() {
+    this->constraintFile = "constraints.txt";
+    this->returnConstraintFile = "return_constraints.txt";
+    this->symbolTableFile = "symbols.txt";
+    this->parametersFile = "_params.txt";
+  }
+
+  map<string, pair<set<string>, string>> readSymbolTable() {
+    string line;
+    ifstream infile(this->symbolTableFile);
+
+    bool firstLine = true;
+    bool lastLine = false;
+    string symbol;
+    set<string> symbols;
+    map<string, pair<set<string>, string>> symbolTable;
+
+    while (getline(infile, line)) {
+      if (firstLine) {
+        symbol = line;
+        firstLine = false;
+      } else if (line.compare("TYPE") == 0) {
+        lastLine = true;
+      } else if (line.compare("---------------") == 0) {
+        firstLine = true;
+      } else if (lastLine) {
+        lastLine = false;
+        pair<set<string>, string> p(symbols, line);
+        symbolTable[symbol] = p;
+        symbols.clear();
+      } else {
+        symbols.insert(line);
+      }
+    }
+    return symbolTable;
+  }
+
+  vector<string> readParameters(string functionName) {
+    ifstream infile(functionName + this->parametersFile);
+    string line;
+    vector<string> params;
+
+    while (getline(infile, line) && line.compare("---------------"))
+      params.push_back(line);
+    return params;
+  }
+
+  vector<vector<string>> readReturnConstraints(vector<string>& returnValues) {
+    ifstream infile(this->returnConstraintFile);
+    string line;
+    bool firstLine = true;
+    vector<vector<string>> constraintsList;
+    vector<string> constraints;
+
+    while (getline(infile, line)) {
+      if (firstLine) {
+        returnValues.push_back(line);
+        firstLine = false;
+      } else if (line.compare("---------------") == 0) {
+        constraintsList.push_back(constraints);
+        constraints.clear();
+        firstLine = true;
+      } else {
+        constraints.push_back(line);
+      }
+    }
+    return constraintsList;
+  }
+
+  void writeSymbolTable(map<string, pair<set<string>, string>>& symbolTable) {
+    ofstream symbolFile;
+    symbolFile.open(this->symbolTableFile, ofstream::out | ofstream::trunc);
+    if (symbolFile.is_open()) {
+      for (map<string, pair<set<string>, string>>::const_iterator it = symbolTable.begin(); it != symbolTable.end(); ++it) {
+        symbolFile << it->first << endl;
+        pair<set<string>, string> symbols = it->second;
+        for (string s: symbols.first) {
+          symbolFile << s << endl;
+        }
+        symbolFile << "TYPE" << endl;
+        symbolFile << symbols.second << endl;
+        symbolFile << "---------------\n";
+
+      }
+      symbolFile.close();
+    }
+  }
+
+  void writeParameters(string functionName, vector<string> params) {
+    string fileName = functionName + this->parametersFile;
+    ofstream file (fileName, ofstream::out | ofstream::trunc);
+    return this->writeConstraints(params, file);
+  }
+
+  void writeMainConstraints(vector<string>& constraints) {
+    ofstream file (this->constraintFile, ios_base::app);
+    return this->writeConstraints(constraints, file);
+  }
+
+  void writeReturnConstraints(vector<string>& constraints) {
+    ofstream file;
+    file.open(this->returnConstraintFile, ios_base::app);
+    return this->writeConstraints(constraints, file);
+  }
+
+protected:
+  void writeConstraints(vector<string>& constraints, ofstream& file) {
+    if (file.is_open()) {
+      for (string s: constraints)
+        file << s << endl;
+      file << "---------------\n";
+      file.close();
+    }
+  }
+private:
+  string constraintFile;
+  string returnConstraintFile;
+  string symbolTableFile;
+  string parametersFile;
+};
+
 class SymbolTable {
 public:
   static SymbolTable *getInstance() {
@@ -178,52 +301,29 @@ public:
     this->passParams = passParams;
   }
 
-  void readSymbolTable() {
-    string line;
-    ifstream infile("symbols.txt");
-
-    bool firstLine = true;
-    bool lastLine = false;
-    string symbol;
-    set<string> symbols;
-
-    while (getline(infile, line)) {
-      if (firstLine) {
-        symbol = line;
-        firstLine = false;
-      } else if (line.compare("TYPE") == 0) {
-        lastLine = true;
-      } else if (line.compare("---------------") == 0) {
-        firstLine = true;
-      } else if (lastLine) {
-        lastLine = false;
-        pair<set<string>, string> p(symbols, line);
-        symbolTable[symbol] = p;
-        symbols.clear();
-      } else {
-        symbols.insert(line);
-      }
-    }
+  void saveState() {
+    this->fs.writeSymbolTable(this->symbolTable);
   }
 
-  void printFile() {
-    string fileName = "symbols.txt";
-    ofstream symbolFile;
-    symbolFile.open(fileName, ofstream::out | ofstream::trunc);
-    if (symbolFile.is_open()) {
-      for (map<string, pair<set<string>, string>>::const_iterator it = symbolTable.begin(); it != symbolTable.end(); ++it) {
-        symbolFile << it->first << endl;
-        pair<set<string>, string> symbols = it->second;
-        for (string s: symbols.first) {
-          symbolFile << s << endl;
-        }
-        symbolFile << "TYPE" << endl;
-        symbolFile << symbols.second << endl;
-        symbolFile << "---------------\n";
-
+  void saveParameters(string functionName, vector<string> parameters) {
+    vector<string> passParameters;
+    for (string p : parameters) {
+      int paramIndex = this->isInParams(p);
+      if (paramIndex != -1) {
+        passParameters.push_back(this->passParams[paramIndex]);
+      } else {
+        passParameters.push_back(p);
       }
-      symbolFile.close();
     }
+    this->fs.writeParameters(functionName, passParameters);
+  }
+
+  void loadParameters(string functionName) {
+    this->passParams = this->fs.readParameters(functionName);
+  }
+
+  void loadState() {
+    this->symbolTable = this->fs.readSymbolTable();
   }
 
   void print() {
@@ -285,10 +385,12 @@ protected:
   }
 private:
   SymbolTable() {
+    this->fs = FileSystem();
     map<string, pair<set<string>, string>> st;
     symbol = "s";
     symbolTable = st;
   }
+  FileSystem fs;
   string type;
   vector<string> params;
   vector<string> passParams;
@@ -296,12 +398,6 @@ private:
   string symbol;
   map<string, pair<set<string>, string>> symbolTable;
 };
-
-string removeSpaces(string str) {
-  str.erase(remove(str.begin(), str.end(), ' '), str.end());
-  str.erase(remove(str.begin(), str.end(), '\n'), str.end());
-  return str;
-}
 
 vector<string> split(string s, char delimiter) {
   vector <string> substrings;
@@ -318,18 +414,6 @@ vector<string> split(string s, char delimiter) {
   return substrings;
 }
 
-int isInBlock(const clang::CFGBlock* block, unsigned int previousBlockId) {
-  int i = 0;
-  for (clang::CFGBlock::const_succ_iterator I = block->succ_begin(), E = block->succ_end(); I != E; I++) {
-    if (((*I).getReachableBlock()->getBlockID() == previousBlockId) && i == 0)
-      return 0;
-    if (((*I).getReachableBlock()->getBlockID() == previousBlockId) && i == 1)
-      return 1;
-    i++;
-  }
-  return -1;
-}
-
 set<pair<string, string>> findPairsWithSameFirst(set<pair<string, string>>& vars) {
   set<pair<string, string>> duplicatePairs;
   for (set<pair<string, string>>::iterator i = vars.begin(); i != vars.end(); ++i) {
@@ -342,13 +426,6 @@ set<pair<string, string>> findPairsWithSameFirst(set<pair<string, string>>& vars
     }
   }
   return duplicatePairs;
-}
-
-void replaceVariablesBySymbols(string& stmt, set<pair<string, string>>& vars) {
-  for (pair<string, string> p: vars) {
-    regex e(p.first + "((?=\\W)|$)");
-    stmt = regex_replace(stmt, e, p.second);
-  }
 }
 
 void getStmtOperands(const clang::Stmt* stmt, set<pair<string, string>>& operands, string type) {
@@ -406,27 +483,6 @@ void getStmtOperands(const clang::Stmt* stmt, set<pair<string, string>>& operand
   }
 }
 
-const string GetTerminatorCondition(const clang::CFGBlock* cfgBlock, unsigned int previousBlockId) {
-  const clang::Stmt *terminatorStmt = cfgBlock->getTerminatorStmt();
-  if (terminatorStmt) {
-    if (terminatorStmt->getStmtClass() == clang::Stmt::IfStmtClass) {
-
-      set<pair<string, string>> operands;
-      getStmtOperands(cfgBlock->getTerminatorCondition(), operands, "COND");
-
-      string stmt;
-      if (isInBlock(cfgBlock, previousBlockId) == 0)
-        stmt = getStatementString(cfgBlock->getTerminatorCondition());
-      else
-        stmt = "!(" + getStatementString(cfgBlock->getTerminatorCondition()) + ")";
-
-      replaceVariablesBySymbols(stmt, operands);
-      return stmt;
-    }
-  }
-  return "";
-}
-
 bool hasFunctionCall(
     const clang::Stmt* stmt, string stmtClass,
     vector<string>& names,
@@ -452,154 +508,6 @@ bool hasFunctionCall(
     return true;
   }
   return false;
-}
-
-vector<vector<string>> addFunctionConstraints(vector<string>& returnValues) {
-  string line;
-  ifstream infile("return_constraints.txt");
-  bool firstLine = true;
-  vector<vector<string>> constraintsList;
-  vector<string> constraints;
-
-  while (getline(infile, line)) {
-    if (firstLine) {
-      returnValues.push_back(line);
-      firstLine = false;
-    } else if (line.compare("---------------") == 0) {
-      constraintsList.push_back(constraints);
-      constraints.clear();
-      firstLine = true;
-    } else {
-      constraints.push_back(line);
-    }
-  }
-  return constraintsList;
-}
-
-vector<string> readParamsFromFile() {
-  string line;
-  ifstream infile("params.txt");
-
-  vector <string> params;
-
-  while (getline(infile, line))
-    params.push_back(line);
-  return params;
-}
-
-void writeParametersToFile(vector<string> params) {
-  string fileName = "params.txt";
-  ofstream paramsFile (fileName, ios_base::app);
-  if (paramsFile.is_open()) {
-    for (string p: params)
-      paramsFile << p << endl;
-    paramsFile.close();
-  }
-}
-
-vector<vector<string>> GetBlockCondition(const clang::CFGBlock* block, vector<string>& constraints) {
-  vector<vector<string>> constraintsList;
-  constraintsList.push_back(constraints);
-
-  for (clang::CFGBlock::const_reverse_iterator I = block->rbegin(), E = block->rend(); I != E ; ++I) {
-    clang::CFGElement El = *I;
-    if (auto SE = El.getAs<clang::CFGStmt>()) {
-      const clang::Stmt *stmt = SE->getStmt();
-      const string stmtClass(stmt->getStmtClassName());
-
-      set<pair<string, string>> operands;
-      getStmtOperands(stmt, operands, "");
-
-      string statement = getStatementString(stmt);
-      pair<string, string> statementClassPair(statement, stmtClass);
-
-      vector<string> funcNames;
-      vector<vector<string>> paramNames;
-
-      if (hasFunctionCall(stmt, stmtClass, funcNames, paramNames) && stmtClass.compare("CallExpr")) {
-        cout << "Function names: " << endl;
-        int i = 0;
-        for (string name: funcNames) {
-
-          SymbolTable* se = se->getInstance();
-          se->printFile();
-          writeParametersToFile(paramNames[i]);
-
-          string sysCall = "./cfg test.cpp -- " + name + " c RETURN";
-          system(sysCall.c_str());
-
-          se->readSymbolTable();
-
-          vector<string> returnValues;
-          vector<vector<string>> functionConstraintsList = addFunctionConstraints(returnValues);
-
-          int index = 0;
-          for (string returnValue: returnValues) {
-            if (stmtClass.compare("DeclStmt") == 0) {
-              regex e("^\\S*");
-              statement = regex_replace(statement, e, "");
-            }
-            regex e(name + "\\((.*)\\)");
-            string ts = regex_replace(statement, e, returnValue);
-            replaceVariablesBySymbols(ts, operands);
-            functionConstraintsList[index].insert(functionConstraintsList[index].begin(), ts);
-            index++;
-          }
-
-          vector<vector<string>> newConstraintsList;
-          for (vector<string> c: constraintsList) {
-            for (vector<string> fc: functionConstraintsList) {
-              vector<string> newConstraints = c;
-              newConstraints.insert(newConstraints.end(), fc.begin(), fc.end());
-              newConstraintsList.push_back(newConstraints);
-            }
-          }
-          constraintsList = newConstraintsList;
-          i++;
-        }
-      } else {
-        if (stmtClass.compare("DeclStmt") == 0) {
-          regex e("^\\S*");
-          statement = regex_replace(statement, e, "");
-        }
-        if (operands.size()) {
-          set<pair<string, string>> duplicate = findPairsWithSameFirst(operands);
-          if (duplicate.size()) {
-
-            vector<string> splitStatement = split(statement, '=');
-
-            string lhs = splitStatement[0];
-            string rhs = splitStatement[1];
-
-            replaceVariablesBySymbols(lhs, duplicate);
-            replaceVariablesBySymbols(rhs, operands);
-
-            for (int i = 0; i < constraintsList.size(); i++) {
-              constraintsList[i].push_back(lhs + "=" + rhs);
-            }
-
-          } else {
-            replaceVariablesBySymbols(statement, operands);
-            for (int i = 0; i < constraintsList.size(); i++) {
-              constraintsList[i].push_back(statement);
-            }
-          }
-        }
-      }
-    }
-  }
-  return constraintsList;
-}
-
-void WriteConstraintsToFile(vector<string>& constraints) {
-  string fileName = incidentType.compare("RETURN") ? "constraints.txt" : "return_constraints.txt";
-  ofstream constraintsFile (fileName, ios_base::app);
-  if (constraintsFile.is_open()) {
-    for (string s: constraints)
-      constraintsFile << s << endl;
-    constraintsFile << "---------------\n";
-    constraintsFile.close();
-  }
 }
 
 class Incident {
@@ -703,9 +611,9 @@ private:
   vector<string> constraints;
 };
 
-class StatementHandler {
+class Transpiler {
 public:
-  StatementHandler() {}
+  Transpiler() {}
 
   void replaceVariables(string& stmt, set<pair<string, string>>& vars) {
     for (pair<string, string> p: vars) {
@@ -713,10 +621,14 @@ public:
       stmt = regex_replace(stmt, e, p.second);
     }
   }
-
   void replaceDeclaration(string& statement) {
     regex e("^\\S*");
     statement = regex_replace(statement, e, "");
+  }
+
+  string replaceFunctionCallByReturnValue(string& statement, string& functionName, string& returnValue) {
+    regex e(functionName + "\\((.*)\\)");
+    return regex_replace(statement, e, returnValue);
   }
 
   void replaceStaticSingleAssignment(
@@ -734,18 +646,40 @@ public:
     statement = lhs + "=" + rhs;
   }
 
-  void replaceStatement(string& statement, set<pair<string, string>>& operands) {
-    set<pair<string, string>> duplicate = findPairsWithSameFirst(operands);
-    if (duplicate.size())
-      return this->replaceStaticSingleAssignment(statement, operands, duplicate);
-    return this->replaceVariables(statement, operands);
+  void replaceStatement(string& statement, string& statementClass, set<pair<string, string>>& operands) {
+    if (statementClass.compare("DeclStmt") == 0)
+      this->replaceDeclaration(statement);
+
+    if (operands.size()) {
+      set<pair<string, string>> duplicate = findPairsWithSameFirst(operands);
+      if (duplicate.size())
+        return this->replaceStaticSingleAssignment(statement, operands, duplicate);
+      return this->replaceVariables(statement, operands);
+    }
+  }
+
+  string replaceFunction(
+      string& statement,
+      string& statementClass,
+      string& functionName,
+      string& returnValue,
+      set<pair<string, string>>& operands) {
+
+    if (statementClass.compare("DeclStmt") == 0)
+      this->replaceDeclaration(statement);
+
+    string replacedStatement = this->replaceFunctionCallByReturnValue(statement, functionName, returnValue);
+
+    this->replaceVariables(replacedStatement, operands);
+    return replacedStatement;
   }
 };
 
 class CFGBlockHandler {
 public:
   CFGBlockHandler() {
-    this->statementHandler = StatementHandler();
+    this->fs = FileSystem();
+    this->transpiler = Transpiler();
   }
 
   bool isInIf(const clang::CFGBlock* block, unsigned int previousBlockId) {
@@ -761,78 +695,53 @@ public:
 
   vector<vector<string>> getBlockCondition(const clang::CFGBlock* block, vector<string>& constraints) {
 
-//    vector<vector<string>> constraintsList;
-    constraintsList.clear();
-    constraintsList.push_back(constraints);
+    this->initializeConstraints(constraints);
 
     for (clang::CFGBlock::const_reverse_iterator I = block->rbegin(), E = block->rend(); I != E ; ++I) {
       clang::CFGElement El = *I;
       if (auto SE = El.getAs<clang::CFGStmt>()) {
         const clang::Stmt *stmt = SE->getStmt();
-        const string stmtClass(stmt->getStmtClassName());
+        string stmtClass(stmt->getStmtClassName());
 
         set<pair<string, string>> operands;
         getStmtOperands(stmt, operands, "");
 
         string statement = getStatementString(stmt);
-        pair<string, string> statementClassPair(statement, stmtClass);
 
         vector<string> funcNames;
         vector<vector<string>> paramNames;
 
         if (stmtClass.compare("CallExpr") && hasFunctionCall(stmt, stmtClass, funcNames, paramNames)) {
-          cout << "Function names: " << endl;
           int i = 0;
           for (string name: funcNames) {
 
             SymbolTable* se = se->getInstance();
-            se->printFile();
-            writeParametersToFile(paramNames[i]);
+            se->saveState();
+            se->saveParameters(name, paramNames[i]);
 
             string sysCall = "./cfg test.cpp -- " + name + " c RETURN";
             system(sysCall.c_str());
 
-            se->readSymbolTable();
+            se->loadState();
 
             vector<string> returnValues;
-            vector<vector<string>> functionConstraintsList = addFunctionConstraints(returnValues);
+            vector<vector<string>> functionConstraintsList = this->fs.readReturnConstraints(returnValues);
 
             int index = 0;
             for (string returnValue: returnValues) {
-              if (stmtClass.compare("DeclStmt") == 0) {
-                regex e("^\\S*");
-                statement = regex_replace(statement, e, "");
-              }
-              regex e(name + "\\((.*)\\)");
-              string ts = regex_replace(statement, e, returnValue);
-              replaceVariablesBySymbols(ts, operands);
+              string ts = this->transpiler.replaceFunction(statement, stmtClass, name, returnValue, operands);
               functionConstraintsList[index].insert(functionConstraintsList[index].begin(), ts);
               index++;
             }
 
-            vector<vector<string>> newConstraintsList;
-            for (vector<string> c: constraintsList) {
-              for (vector<string> fc: functionConstraintsList) {
-                vector<string> newConstraints = c;
-                newConstraints.insert(newConstraints.end(), fc.begin(), fc.end());
-                newConstraintsList.push_back(newConstraints);
-              }
-            }
-            constraintsList = newConstraintsList;
+            this->addFunction(functionConstraintsList);
             i++;
           }
         }
         else {
-          if (stmtClass.compare("DeclStmt") == 0)
-            this->statementHandler.replaceDeclaration(statement);
-
-          if (operands.size()) {
-            set<pair<string, string>> duplicate = findPairsWithSameFirst(operands);
-            this->statementHandler.replaceStatement(statement, operands);
-            for (int i = 0; i < constraintsList.size(); i++) {
-              constraintsList[i].push_back(statement);
-            }
-          }
+          this->transpiler.replaceStatement(statement, stmtClass, operands);
+          if (operands.size())
+            this->addStatement(statement);
         }
       }
     }
@@ -852,20 +761,44 @@ public:
       else
         stmt = "!(" + getStatementString(block->getTerminatorCondition()) + ")";
 
-      replaceVariablesBySymbols(stmt, operands);
+      this->transpiler.replaceVariables(stmt, operands);
       return stmt;
     }
     return "";
   }
 
+  void initializeConstraints(vector<string>& constraints) {
+    this->constraintsList.clear();
+    this->constraintsList.push_back(constraints);
+  }
+
+  void addStatement(string& statement) {
+    for (int i = 0; i < this->constraintsList.size(); i++)
+      this->constraintsList[i].push_back(statement);
+  }
+
+  void addFunction(vector<vector<string>>& functionConstraintsList) {
+    vector<vector<string>> newConstraintsList;
+    for (vector<string> c: this->constraintsList) {
+      for (vector<string> fc: functionConstraintsList) {
+        vector<string> newConstraints = c;
+        newConstraints.insert(newConstraints.end(), fc.begin(), fc.end());
+        newConstraintsList.push_back(newConstraints);
+      }
+    }
+    this->constraintsList = newConstraintsList;
+  }
+
 private:
+  FileSystem fs;
+  Transpiler transpiler;
   vector<vector<string>> constraintsList;
-  StatementHandler statementHandler;
 };
 
 class CFGHandler {
 public:
   CFGHandler(const unique_ptr<clang::CFG>& cfg) {
+    this->fs = FileSystem();
     this->cfgBlockHandler = CFGBlockHandler();
     this->incident = createIncident();
     this->cfg = &cfg;
@@ -929,7 +862,10 @@ public:
     cout << "Constrains:" << endl;
     for (Path path: this->paths) {
       vector<string> constraints = path.getConstraints();
-      WriteConstraintsToFile(constraints);
+      if (incidentType.compare("RETURN"))
+        this->fs.writeMainConstraints(constraints);
+      else
+        this->fs.writeReturnConstraints(constraints);
       cout << "Sub Path: ";
       for (string s: constraints)
         cout << s << " & ";
@@ -951,6 +887,7 @@ public:
 
 private:
   const unique_ptr<clang::CFG>* cfg;
+  FileSystem fs;
   CFGBlockHandler cfgBlockHandler;
   vector<Path> paths;
   Incident* incident;
@@ -962,7 +899,6 @@ class MyCallback : public clang::ast_matchers::MatchFinder::MatchCallback {
  public:
   MyCallback() {}
   void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) {
-    cout << "Hello " << functionName << endl;
     Context *context = context->getInstance();
     context->setContext(Result);
 
@@ -971,8 +907,8 @@ class MyCallback : public clang::ast_matchers::MatchFinder::MatchCallback {
 
     if (incidentType.compare("RETURN") == 0) {
       SymbolTable* se = se->getInstance();
-      se->readSymbolTable();
-      vector<string> passParams = readParamsFromFile();
+      se->loadState();
+      se->loadParameters(functionName);
       vector<string> params;
       for (clang::FunctionDecl::param_const_iterator I = Function->param_begin(), E = Function->param_end(); I != E; ++I) {
         string name = (*I)->getNameAsString();
@@ -980,7 +916,6 @@ class MyCallback : public clang::ast_matchers::MatchFinder::MatchCallback {
       }
       se->setType("RETURN");
       se->setParams(params);
-      se->setPassParams(passParams);
     }
 
     const auto cfg = clang::CFG::buildCFG(Function,
@@ -1042,7 +977,7 @@ int main(int argc, const char **argv) {
   executeAction(argc, argv);
 
   SymbolTable* se = se->getInstance();
-  se->printFile();
+  se->saveState();
 
   return 0;
 }

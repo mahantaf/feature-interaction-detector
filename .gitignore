@@ -2,3 +2,4 @@ cfg
 *.txt
 test.cpp
 .idea/
+temp/
