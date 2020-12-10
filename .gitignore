@@ -3,3 +3,4 @@ cfg
 test.cpp
 .idea/
 temp/
+venv/

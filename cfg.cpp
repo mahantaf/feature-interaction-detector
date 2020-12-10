@@ -18,6 +18,7 @@
 #include <clang/Frontend/FrontendAction.h>
 #include <clang/Tooling/CommonOptionsParser.h>
 #include <clang/Tooling/Tooling.h>
+#include <clang/Tooling/Inclusions/HeaderIncludes.h>
 #include <clang/Lex/Lexer.h>
 #include <clang/Rewrite/Core/Rewriter.h>
 
@@ -109,6 +110,7 @@ public:
     this->returnConstraintFile = "return_constraints.txt";
     this->symbolTableFile = "symbols.txt";
     this->parametersFile = "_params.txt";
+    this->parameterTypesFile = "_param_types.txt";
   }
 
   map<string, pair<set<string>, string>> readSymbolTable() {
@@ -139,6 +141,16 @@ public:
       }
     }
     return symbolTable;
+  }
+
+  vector<string> readParameterTypes(string functionName) {
+    ifstream infile(functionName + this->parameterTypesFile);
+    string line;
+    vector<string> paramTypes;
+
+    while (getline(infile, line) && line.compare("---------------"))
+      paramTypes.push_back(line);
+    return paramTypes;
   }
 
   vector<string> readParameters(string functionName) {
@@ -192,6 +204,12 @@ public:
     }
   }
 
+  void writeParametersType(string functionName, vector<string> paramTypes) {
+    string fileName = functionName + this->parameterTypesFile;
+    ofstream file (fileName, ofstream::out | ofstream::trunc);
+    return this->writeConstraints(paramTypes, file);
+  }
+
   void writeParameters(string functionName, vector<string> params) {
     string fileName = functionName + this->parametersFile;
     ofstream file (fileName, ofstream::out | ofstream::trunc);
@@ -209,6 +227,28 @@ public:
     return this->writeConstraints(constraints, file);
   }
 
+//  void writeReturnPaths(vector<Path>& paths) {
+//    ofstream file;
+//    file.open(this->returnConstraintFile, ofstream::out | ofstream::trunc);
+//    if (file.is_open()) {
+//      cout << "Constrains:" << endl;
+//      for (Path path: paths) {
+//
+//        vector<string> constraints = path.getConstraints();
+//
+//        for (string s: constraints)
+//          file << s << endl;
+//        file << "---------------\n";
+//
+//        cout << "Sub Path: ";
+//        for (string s: constraints)
+//          cout << s << " & ";
+//        cout << endl;
+//      }
+//      file.close();
+//    }
+//  }
+
 protected:
   void writeConstraints(vector<string>& constraints, ofstream& file) {
     if (file.is_open()) {
@@ -223,6 +263,7 @@ private:
   string returnConstraintFile;
   string symbolTableFile;
   string parametersFile;
+  string parameterTypesFile;
 };
 
 class SymbolTable {
@@ -248,12 +289,15 @@ public:
      *          If last type is LVALUE -> create new symbol
      */
     string varSymbol = "";
-    if (this->type.compare("RETURN") == 0) {
-      cout << "Creating symbol for variable" << endl;
+    if (this->type.compare("RETURN") == 0 && this->isInParams(var) != -1) {
       int paramIndex = this->isInParams(var);
-      if (paramIndex != -1) {
-        string passParam = this->passParams[paramIndex];
-        cout << "Found that this variable is a passed variable: " << passParam << endl;
+      string passParam = this->passParams[paramIndex];
+      string passParamType = this->passParamTypes[paramIndex];
+
+      if (this->isLiteral(passParamType)) {
+        varSymbol = passParam;
+        setVariableSymbol(var, varSymbol);
+      } else {
         this->type = "";
         varSymbol = addVariableSymbol(passParam, type);
         setVariableSymbol(var, varSymbol);
@@ -318,6 +362,23 @@ public:
     this->fs.writeParameters(functionName, passParameters);
   }
 
+  void saveParameterTypes(string functionName, vector<string> parameters, vector<string> parameterTypes) {
+    vector<string> passParameterTypes;
+    for (vector<string>::iterator p = parameters.begin(); p != parameters.end(); ++p) {
+      int paramIndex = this->isInParams(*p);
+      if (paramIndex != -1) {
+        passParameterTypes.push_back(this->passParamTypes[paramIndex]);
+      } else {
+        passParameterTypes.push_back(parameterTypes[p - parameters.begin()]);
+      }
+    }
+    this->fs.writeParametersType(functionName, passParameterTypes);
+  }
+
+  void loadParameterTypes(string functionName) {
+    this->passParamTypes = this->fs.readParameterTypes(functionName);
+  }
+
   void loadParameters(string functionName) {
     this->passParams = this->fs.readParameters(functionName);
   }
@@ -343,7 +404,7 @@ protected:
       this->symbol = "ref";
     }
     set<string> variableSymbols = this->getVariableSymbols(variable);
-    string s = this->symbol + to_string(variableSymbols.size()) + "_" + variable;
+    string s = variable + "_" + this->symbol + to_string(variableSymbols.size());
     variableSymbols.insert(s);
     this->setVariableSymbols(variable, variableSymbols);
     this->symbol = "s";
@@ -361,6 +422,12 @@ protected:
 
   string getVariableType(string variable) {
     return this->symbolTable[variable].second;
+  }
+
+  bool isLiteral(string variableType) {
+    if (variableType.find("Literal") != string::npos)
+      return true;
+    return false;
   }
 
   int isInParams(string variable) {
@@ -394,6 +461,7 @@ private:
   string type;
   vector<string> params;
   vector<string> passParams;
+  vector<string> passParamTypes;
   static SymbolTable *instance;
   string symbol;
   map<string, pair<set<string>, string>> symbolTable;
@@ -445,7 +513,8 @@ void getStmtOperands(const clang::Stmt* stmt, set<pair<string, string>>& operand
       getStmtOperands(rhs, operands, type);
       getStmtOperands(lhs, operands, type);
     }
-  } else if (stmtClass.compare("ImplicitCastExpr") == 0 || stmtClass.compare("DeclRefExpr") == 0) {
+  }
+  else if (stmtClass.compare("ImplicitCastExpr") == 0 || stmtClass.compare("DeclRefExpr") == 0) {
 
     if (type.compare("")) {
       string var = getStatementString(stmt);
@@ -459,11 +528,13 @@ void getStmtOperands(const clang::Stmt* stmt, set<pair<string, string>>& operand
       }
     }
 
-  } else if (stmtClass.compare("ParenExpr") == 0) {
+  }
+  else if (stmtClass.compare("ParenExpr") == 0) {
       const clang::ParenExpr *parenExpr = cast<clang::ParenExpr>(stmt);
       const clang::Stmt *subParen = parenExpr->getSubExpr();
       getStmtOperands(subParen, operands, type);
-  } else if (stmtClass.compare("DeclStmt") == 0) {
+  }
+  else if (stmtClass.compare("DeclStmt") == 0) {
     const clang::DeclStmt *declStmt = cast<clang::DeclStmt>(stmt);
     const clang::Decl* declaration = declStmt->getSingleDecl();
     if (declaration) {
@@ -481,19 +552,24 @@ void getStmtOperands(const clang::Stmt* stmt, set<pair<string, string>>& operand
       }
     }
   }
+  else if (stmtClass.compare("ReturnStmt") == 0) {
+    const clang::Stmt* returnValue = cast<clang::ReturnStmt>(stmt)->getRetValue();
+    getStmtOperands(returnValue, operands, "RVALUE");
+  }
 }
 
 bool hasFunctionCall(
     const clang::Stmt* stmt, string stmtClass,
     vector<string>& names,
-    vector<vector<string>>& paramNames
+    vector<vector<string>>& paramNames,
+    vector<vector<string>>& paramTypes
 ) {
   if (stmtClass.compare("BinaryOperator") == 0) {
     const clang::BinaryOperator *binaryOperator = cast<clang::BinaryOperator>(stmt);
     const clang::Stmt *lhs = binaryOperator->getLHS();
     const clang::Stmt *rhs = binaryOperator->getRHS();
-    return hasFunctionCall(lhs, lhs->getStmtClassName(), names, paramNames) ||
-           hasFunctionCall(rhs, rhs->getStmtClassName(), names, paramNames);
+    return hasFunctionCall(lhs, lhs->getStmtClassName(), names, paramNames, paramTypes) ||
+           hasFunctionCall(rhs, rhs->getStmtClassName(), names, paramNames, paramTypes);
   } else if (stmtClass.compare("CallExpr") == 0) {
     const clang::CallExpr* callExpr = cast<clang::CallExpr>(stmt);
 
@@ -501,9 +577,13 @@ bool hasFunctionCall(
     const clang::Expr* const* args = callExpr->getArgs();
 
     vector<string> params;
-    for (unsigned int i = 0; i < callExpr->getNumArgs(); ++i)
+    vector<string> paramType;
+    for (unsigned int i = 0; i < callExpr->getNumArgs(); ++i) {
       params.push_back(getStatementString(args[i]));
+      paramType.push_back(args[i]->getStmtClassName());
+    }
     paramNames.push_back(params);
+    paramTypes.push_back(paramType);
     names.push_back(getStatementString(callee));
     return true;
   }
@@ -572,9 +652,10 @@ public:
   bool hasIncident(const clang::Stmt* stmt, vector<string>& incidentValues) {
     const string stmtClass(stmt->getStmtClassName());
     if (stmtClass.compare("ReturnStmt") == 0) {
-      const clang::ReturnStmt* returnStmt = cast<clang::ReturnStmt>(stmt);
-      const clang::Stmt* returnValue = returnStmt->getRetValue();
-      incidentValues.push_back(getStatementString(returnValue));
+//      const clang::ReturnStmt* returnStmt = cast<clang::ReturnStmt>(stmt);
+//      const clang::Stmt* returnValue = returnStmt->getRetValue();
+//
+//      incidentValues.push_back(getStatementString(returnValue));
       return true;
     }
     return false;
@@ -583,6 +664,9 @@ public:
   void print() {
     cout << "Return Incident" << endl;
   }
+
+private:
+
 };
 
 Incident* createIncident() {
@@ -622,7 +706,12 @@ public:
     }
   }
   void replaceDeclaration(string& statement) {
-    regex e("^\\S*");
+    regex e("^\\S*\\s");
+    statement = regex_replace(statement, e, "");
+  }
+
+  void replaceReturnStatement(string& statement) {
+    regex e("return\\s");
     statement = regex_replace(statement, e, "");
   }
 
@@ -649,6 +738,9 @@ public:
   void replaceStatement(string& statement, string& statementClass, set<pair<string, string>>& operands) {
     if (statementClass.compare("DeclStmt") == 0)
       this->replaceDeclaration(statement);
+
+    if (statementClass.compare("ReturnStmt") == 0)
+      this->replaceReturnStatement(statement);
 
     if (operands.size()) {
       set<pair<string, string>> duplicate = findPairsWithSameFirst(operands);
@@ -708,16 +800,20 @@ public:
 
         string statement = getStatementString(stmt);
 
+        cout << "Statement: " << statement << endl;
+
         vector<string> funcNames;
         vector<vector<string>> paramNames;
+        vector<vector<string>> paramTypes;
 
-        if (stmtClass.compare("CallExpr") && hasFunctionCall(stmt, stmtClass, funcNames, paramNames)) {
+        if (stmtClass.compare("CallExpr") && hasFunctionCall(stmt, stmtClass, funcNames, paramNames, paramTypes)) {
           int i = 0;
           for (string name: funcNames) {
 
             SymbolTable* se = se->getInstance();
             se->saveState();
             se->saveParameters(name, paramNames[i]);
+            se->saveParameterTypes(name, paramNames[i], paramTypes[i]);
 
             string sysCall = "./cfg test.cpp -- " + name + " c RETURN";
             system(sysCall.c_str());
@@ -742,6 +838,9 @@ public:
           this->transpiler.replaceStatement(statement, stmtClass, operands);
           if (operands.size())
             this->addStatement(statement);
+
+          if (stmtClass.compare("ReturnStmt") == 0)
+            ++I;
         }
       }
     }
@@ -850,9 +949,6 @@ public:
       this->paths.clear();
       vector<string> pathConstraints;
 
-      if (incidentType.compare("RETURN") == 0)
-        pathConstraints.push_back(this->returnValues[blk - this->incidentBlocks.begin()]);
-
       this->bottomUpTraverse((*blk), 0, pathConstraints);
       this->writePaths();
     }
@@ -906,9 +1002,12 @@ class MyCallback : public clang::ast_matchers::MatchFinder::MatchCallback {
 
 
     if (incidentType.compare("RETURN") == 0) {
+
       SymbolTable* se = se->getInstance();
       se->loadState();
       se->loadParameters(functionName);
+      se->loadParameterTypes(functionName);
+
       vector<string> params;
       for (clang::FunctionDecl::param_const_iterator I = Function->param_begin(), E = Function->param_end(); I != E; ++I) {
         string name = (*I)->getNameAsString();
@@ -951,7 +1050,7 @@ class MyFrontendAction : public clang::ASTFrontendAction {
 public:
 
   std::unique_ptr <clang::ASTConsumer>
-  virtual CreateASTConsumer(clang::CompilerInstance &, llvm::StringRef) override {
+  virtual CreateASTConsumer(clang::CompilerInstance& CI, llvm::StringRef) override {
     return std::make_unique<MyConsumer>();
   }
 };
