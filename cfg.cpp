@@ -644,7 +644,6 @@ public:
             if (binaryOperator->isAssignmentOp()) {
                 const clang::Stmt* lhs = binaryOperator->getLHS();
                 string stmtString = getStatementString(lhs);
-                cout << "Statement string: " << stmtString << ": " << this->incident << endl;
                 if (stmtString.compare(this->incident) == 0)
                     return true;
             }
@@ -870,9 +869,8 @@ public:
                 const clang::OpaqueValueExpr *opaqueValueExpr = cast<clang::OpaqueValueExpr>(tc);
                 cout << "OPAQUE VALUE: " << endl;
                 opaqueValueExpr->dump();
-                cout << "OV: " << getStatementString(opaqueValueExpr) << endl;
                 cout << "SOURCE VALUE: " << endl;
-                opaqueValueExpr->getSourceExpr()->IgnoreParens()->dump();
+                opaqueValueExpr->getSourceExpr()->dump();
 
             }
             getStmtOperands(block->getTerminatorCondition(), operands, "COND");
@@ -932,7 +930,6 @@ public:
                 clang::CFGElement El = *I;
                 if (auto SE = El.getAs<clang::CFGStmt>()) {
                     const clang::Stmt *stmt = SE->getStmt();
-//                    cout << getStatementString(stmt) << ' ' << stmt->getStmtClassName() << endl;
                     if (this->incident->hasIncident(stmt, this->returnValues)) {
                         this->incidentBlocks.push_back(blk);
                     }
@@ -1020,36 +1017,41 @@ public:
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) {
         Context *context = context->getInstance();
         context->setContext(Result);
-
-        const auto* Function = Result.Nodes.getNodeAs<clang::FunctionDecl>("fn");
-
-        if (Function->isThisDeclarationADefinition()) {
-            if (incidentType.compare("RETURN") == 0) {
-
-                SymbolTable *se = se->getInstance();
-                se->loadState();
-                se->loadParameters(functionName);
-                se->loadParameterTypes(functionName);
-
-                vector <string> params;
-                for (clang::FunctionDecl::param_const_iterator I = Function->param_begin(), E = Function->param_end();
-                     I != E; ++I) {
-                    string name = (*I)->getNameAsString();
-                    params.push_back(name);
-                }
-                se->setType("RETURN");
-                se->setParams(params);
+        if (incidentType.compare("VARINFUNC") == 0 || incidentType.compare("VARWRITE") == 0) {
+            const auto* If = Result.Nodes.getNodeAs<clang::IfStmt>("if");
+            clang::SourceLocation SL = If->getBeginLoc();
+            const clang::SourceManager* SM = Result.SourceManager;
+            if (SM->isInMainFile(SL)) {
+                // do the job
+                return;
             }
+        } else {
+            const auto* Function = Result.Nodes.getNodeAs<clang::FunctionDecl>("fn");
+            if (Function->isThisDeclarationADefinition()) {
+                if (incidentType.compare("RETURN") == 0) {
+                    SymbolTable *se = se->getInstance();
+                    se->loadState();
+                    se->loadParameters(functionName);
+                    se->loadParameterTypes(functionName);
 
-            const auto cfg = clang::CFG::buildCFG(Function,
-                                                  Function->getBody(),
-                                                  Result.Context,
-                                                  clang::CFG::BuildOptions());
+                    vector <string> params;
+                    for (clang::FunctionDecl::param_const_iterator I = Function->param_begin(), E = Function->param_end();
+                         I != E; ++I) {
+                        string name = (*I)->getNameAsString();
+                        params.push_back(name);
+                    }
+                    se->setType("RETURN");
+                    se->setParams(params);
+                }
+                const auto cfg = clang::CFG::buildCFG(Function,
+                                                      Function->getBody(),
+                                                      Result.Context,
+                                                      clang::CFG::BuildOptions());
+                CFGHandler cfgHandler(cfg);
 
-            CFGHandler cfgHandler(cfg);
-
-            cfgHandler.findIncidents();
-            cfgHandler.collectConstraints();
+                cfgHandler.findIncidents();
+                cfgHandler.collectConstraints();
+            }
         }
     }
 };
@@ -1057,10 +1059,13 @@ public:
 class MyConsumer : public clang::ASTConsumer {
 public:
     explicit MyConsumer() : handler() {
-//    const auto matching_node = clang::ast_matchers::functionDecl(clang::ast_matchers::isExpansionInMainFile()).bind("fn");
-        const auto matching_node = clang::ast_matchers::functionDecl(clang::ast_matchers::hasName(functionName)).bind("fn");
-
-        match_finder.addMatcher(matching_node, &handler);
+        if (incidentType.compare("VARINFUNC") == 0 || incidentType.compare("VARWRITE") == 0) {
+            const auto matching_node = clang::ast_matchers::ifStmt().bind("if");
+            match_finder.addMatcher(matching_node, &handler);
+        } else {
+            const auto matching_node = clang::ast_matchers::functionDecl(clang::ast_matchers::hasName(functionName)).bind("fn");
+            match_finder.addMatcher(matching_node, &handler);
+        }
     }
 
     void HandleTranslationUnit(clang::ASTContext& ctx) {
