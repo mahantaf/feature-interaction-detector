@@ -1,7 +1,7 @@
 TARGET := cfg
 HEADERS := -isystem `llvm-config --includedir`
 WARNINGS := -Wall -Wextra -pedantic -Wno-unused-parameter
-CXXFLAGS := $(WARNINGS) -std=c++14 -fno-rtti -O3 -Os #-fno-exceptions
+CXXFLAGS := $(WARNINGS) -std=c++14 -O3 -Os #-fno-exceptions -fno-rtti
 LDFLAGS := `llvm-config --ldflags`
 
 CLANG_LIBS := \

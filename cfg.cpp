@@ -43,7 +43,7 @@
 using namespace std;
 using namespace llvm;
 
-string filePath, functionName, incident, incidentType;
+string filePath, functionName, incident, incidentType, root;
 
 //class StringExtra {
 //public:
@@ -114,6 +114,8 @@ public:
         this->symbolTableFile = "symbols.txt";
         this->parametersFile = "_params.txt";
         this->parameterTypesFile = "_param_types.txt";
+        this->functionParametersFile = "params.txt";
+        this->functionParameterTypesFile = "param_types.txt";
     }
 
     void clearMainConstraintsFile() {
@@ -172,6 +174,45 @@ public:
         return params;
     }
 
+    vector<string> readFunctionParameterTypes() {
+        ifstream infile(this->folder + this->functionParameterTypesFile);
+        string line;
+        vector<string> paramTypes;
+
+        while (getline(infile, line) && line.compare("---------------"))
+            paramTypes.push_back(line);
+        return paramTypes;
+    }
+
+    vector<string> readFunctionParameters() {
+        ifstream infile(this->folder + this->functionParametersFile);
+        string line;
+        vector<string> params;
+
+        while (getline(infile, line) && line.compare("---------------"))
+            params.push_back(line);
+        return params;
+    }
+
+    vector<vector<string>> readFunctionConstraints() {
+        cout << "In reading constraint from previous pipeline\n";
+        ifstream infile(this->constraintFile);
+        string line;
+        vector<vector<string>> constraintsList;
+        vector<string> constraints;
+
+        while (getline(infile, line)) {
+            cout << line << endl;
+            if (line.compare("---------------") == 0) {
+                constraintsList.push_back(constraints);
+                constraints.clear();
+            } else {
+                constraints.push_back(line);
+            }
+        }
+        return constraintsList;
+    }
+
     vector<vector<string>> readReturnConstraints(vector<string>& returnValues) {
         ifstream infile(this->folder + this->returnConstraintFile);
         string line;
@@ -219,8 +260,21 @@ public:
         return this->writeConstraints(paramTypes, file);
     }
 
+    void writeFunctionParametersType(vector<string> paramTypes) {
+        string fileName = this->folder + this->functionParameterTypesFile;
+        ofstream file (fileName, ofstream::out | ofstream::trunc);
+        return this->writeConstraints(paramTypes, file);
+    }
+
     void writeParameters(string functionName, vector<string> params) {
         string fileName = this->folder + functionName + this->parametersFile;
+        ofstream file (fileName, ofstream::out | ofstream::trunc);
+        return this->writeConstraints(params, file);
+    }
+
+    void writeFunctionParameters(vector<string> params) {
+
+        string fileName = this->folder + this->functionParametersFile;
         ofstream file (fileName, ofstream::out | ofstream::trunc);
         return this->writeConstraints(params, file);
     }
@@ -253,6 +307,8 @@ private:
     string symbolTableFile;
     string parametersFile;
     string parameterTypesFile;
+    string functionParametersFile;
+    string functionParameterTypesFile;
 };
 
 class SymbolTable {
@@ -278,7 +334,7 @@ public:
          *          If last type is LVALUE -> create new symbol
          */
         string varSymbol = "";
-        if (this->type.compare("RETURN") == 0 && this->isInParams(var) != -1) {
+        if ((this->type.compare("RETURN") == 0 || this->type.compare("FUNCTION") == 0) && this->isInParams(var) != -1) {
             int paramIndex = this->isInParams(var);
             string passParam = this->passParams[paramIndex];
             string passParamType = this->passParamTypes[paramIndex];
@@ -372,6 +428,14 @@ public:
         this->passParams = this->fs.readParameters(functionName);
     }
 
+    void loadFunctionParameterTypes() {
+        this->passParamTypes = this->fs.readFunctionParameterTypes();
+    }
+
+    void loadFunctionParameters() {
+        this->passParams = this->fs.readFunctionParameters();
+    }
+
     void loadState() {
         this->symbolTable = this->fs.readSymbolTable();
     }
@@ -389,7 +453,7 @@ public:
 
 protected:
     string insertNewSymbol(string variable) {
-        if (this->type.compare("RETURN") == 0) {
+        if (this->type.compare("RETURN") == 0 || this->type.compare("FUNCTION") == 0) {
             this->symbol = "ref";
         }
         set<string> variableSymbols = this->getVariableSymbols(variable);
@@ -665,6 +729,49 @@ private:
 
 };
 
+class FunctionIncident : public Incident {
+public:
+    FunctionIncident(string incident) : Incident(incident, "FUNCTION") {}
+
+    vector<string> getParams() {
+        return this->params;
+    }
+
+    vector<string> getParamTypes() {
+        return this->paramTypes;
+    }
+
+    bool hasIncident(const clang::Stmt* stmt, vector<string>& incidentValues) {
+        const string stmtClass(stmt->getStmtClassName());
+        if (stmtClass.compare("CallExpr") == 0) {
+
+            const clang::CallExpr* callExpr = cast<clang::CallExpr>(stmt);
+            const clang::Stmt *callee = callExpr->getCallee();
+
+            string stmtString = getStatementString(callee);
+            if (stmtString.compare(this->incident) == 0) {
+
+                const clang::Expr* const* args = callExpr->getArgs();
+
+                for (unsigned int i = 0; i < callExpr->getNumArgs(); ++i) {
+                   this->params.push_back(getStatementString(args[i]));
+                   this->paramTypes.push_back(args[i]->getStmtClassName());
+                }
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void print() {
+
+    }
+
+private:
+    vector<string> params;
+    vector<string> paramTypes;
+};
+
 Incident* createIncident() {
     if (incidentType.compare("CALL") == 0) {
         return new CallIncident(incident);
@@ -674,6 +781,9 @@ Incident* createIncident() {
     }
     if (incidentType.compare("RETURN") == 0) {
         return new ReturnIncident(incident);
+    }
+    if (incidentType.compare("FUNCTION") == 0) {
+        return new FunctionIncident(incident);
     }
     return nullptr;
 }
@@ -948,20 +1058,45 @@ public:
     }
 
     void collectConstraints() {
-        // Check if it should initialize constraints from file or not;
-
+        if (this->incident->getType().compare("FUNCTION") == 0) {
+            FunctionIncident* functionIncident = dynamic_cast<FunctionIncident*>(this->incident);
+            this->fs.writeFunctionParameters(functionIncident->getParams());
+            this->fs.writeFunctionParametersType(functionIncident->getParamTypes());
+            return;
+        }
         this->fs.clearMainConstraintsFile();
-        int i = 0;
-        for (vector<const clang::CFGBlock*>::iterator blk = this->incidentBlocks.begin(); blk != this->incidentBlocks.end(); ++blk) {
+        vector<vector<string>> initialConstraintsList = this->fs.readFunctionConstraints();
+        cout << "List of constraints:\n";
+        for (vector<string> initialConstraints : initialConstraintsList) {
+            for (string c : initialConstraints)
+                cout << c << ' ';
+            cout << endl;
+        }
+        if (initialConstraintsList.size()) {
+            for (vector<string> initialConstraints : initialConstraintsList) {
+                for (vector<const clang::CFGBlock*>::iterator blk = this->incidentBlocks.begin(); blk != this->incidentBlocks.end(); ++blk) {
 
-            cout << "Incident Block: " << (*blk)->getBlockID() << endl;
+                    cout << "Incident Block: " << (*blk)->getBlockID() << endl;
 
-            this->paths.clear();
-            vector<string> pathConstraints;
+                    this->paths.clear();
+                    vector <string> pathConstraints = initialConstraints;
 
-            this->bottomUpTraverse((*blk), 0, pathConstraints);
-            this->writePaths();
-            i++;
+                    this->bottomUpTraverse((*blk), 0, pathConstraints);
+                    this->writePaths();
+                }
+            }
+        } else {
+            for (vector<const clang::CFGBlock *>::iterator blk = this->incidentBlocks.begin();
+                 blk != this->incidentBlocks.end(); ++blk) {
+
+                cout << "Incident Block: " << (*blk)->getBlockID() << endl;
+
+                this->paths.clear();
+                vector <string> pathConstraints;
+
+                this->bottomUpTraverse((*blk), 0, pathConstraints);
+                this->writePaths();
+            }
         }
     }
 
@@ -1020,20 +1155,24 @@ public:
         } else {
             const auto* Function = Result.Nodes.getNodeAs<clang::FunctionDecl>("fn");
             if (Function->isThisDeclarationADefinition()) {
+                SymbolTable *se = se->getInstance();
+                se->loadState();
+                vector <string> params;
+                for (clang::FunctionDecl::param_const_iterator I = Function->param_begin(), E = Function->param_end();
+                     I != E; ++I) {
+                    string name = (*I)->getNameAsString();
+                    params.push_back(name);
+                }
+                se->setParams(params);
                 if (incidentType.compare("RETURN") == 0) {
-                    SymbolTable *se = se->getInstance();
-                    se->loadState();
                     se->loadParameters(functionName);
                     se->loadParameterTypes(functionName);
-
-                    vector <string> params;
-                    for (clang::FunctionDecl::param_const_iterator I = Function->param_begin(), E = Function->param_end();
-                         I != E; ++I) {
-                        string name = (*I)->getNameAsString();
-                        params.push_back(name);
-                    }
                     se->setType("RETURN");
-                    se->setParams(params);
+                } else {
+                    se->loadFunctionParameters();
+                    se->loadFunctionParameterTypes();
+                    if (root.compare("1"))
+                        se->setType("FUNCTION");
                 }
                 const auto cfg = clang::CFG::buildCFG(Function,
                                                       Function->getBody(),
@@ -1099,9 +1238,9 @@ int main(int argc, const char **argv) {
     functionName = *(&argv[3]);
     incident = *(&argv[4]);
     incidentType = *(&argv[5]);
+    root = *(&argv[6]);
 
     executeAction(argc, argv);
-
     SymbolTable* se = se->getInstance();
     se->saveState();
 
