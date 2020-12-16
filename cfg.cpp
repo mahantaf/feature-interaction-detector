@@ -811,7 +811,7 @@ public:
 
                 string statement = getStatementString(stmt);
 
-                cout << "Statement: " << statement << endl;
+//                cout << "Statement: " << statement << endl;
 
                 vector<string> funcNames;
                 vector<vector<string>> paramNames;
@@ -1083,6 +1083,8 @@ public:
         // Following two lines are added in order to not rising error while not finding #include location
         clang::Preprocessor &pp = CI.getPreprocessor();
         pp.SetSuppressIncludeNotFoundError(true);
+        clang::DiagnosticsEngine& de = pp.getDiagnostics();
+        de.setErrorLimit(1000);
         return std::make_unique<MyConsumer>();
     }
 };
