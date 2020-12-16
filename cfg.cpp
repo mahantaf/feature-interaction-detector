@@ -116,6 +116,12 @@ public:
         this->parameterTypesFile = "_param_types.txt";
     }
 
+    void clearMainConstraintsFile() {
+        std::ofstream ofs;
+        ofs.open(this->constraintFile, std::ofstream::out | std::ofstream::trunc);
+        ofs.close();
+    }
+
     map<string, pair<set<string>, string>> readSymbolTable() {
         string line;
         ifstream infile(this->folder + this->symbolTableFile);
@@ -230,27 +236,6 @@ public:
         return this->writeConstraints(constraints, file);
     }
 
-//  void writeReturnPaths(vector<Path>& paths) {
-//    ofstream file;
-//    file.open(this->returnConstraintFile, ofstream::out | ofstream::trunc);
-//    if (file.is_open()) {
-//      cout << "Constrains:" << endl;
-//      for (Path path: paths) {
-//
-//        vector<string> constraints = path.getConstraints();
-//
-//        for (string s: constraints)
-//          file << s << endl;
-//        file << "---------------\n";
-//
-//        cout << "Sub Path: ";
-//        for (string s: constraints)
-//          cout << s << " & ";
-//        cout << endl;
-//      }
-//      file.close();
-//    }
-//  }
 
 protected:
     void writeConstraints(vector<string>& constraints, ofstream& file) {
@@ -609,6 +594,10 @@ public:
 
     virtual void print() = 0;
 
+    string getType() {
+        return this->type;
+    }
+
 protected:
     string incident;
     string type;
@@ -663,10 +652,6 @@ public:
     bool hasIncident(const clang::Stmt* stmt, vector<string>& incidentValues) {
         const string stmtClass(stmt->getStmtClassName());
         if (stmtClass.compare("ReturnStmt") == 0) {
-//      const clang::ReturnStmt* returnStmt = cast<clang::ReturnStmt>(stmt);
-//      const clang::Stmt* returnValue = returnStmt->getRetValue();
-//
-//      incidentValues.push_back(getStatementString(returnValue));
             return true;
         }
         return false;
@@ -932,6 +917,7 @@ public:
                     const clang::Stmt *stmt = SE->getStmt();
                     if (this->incident->hasIncident(stmt, this->returnValues)) {
                         this->incidentBlocks.push_back(blk);
+                        this->incidentStatements.push_back(stmt);
                     }
                 }
             }
@@ -962,6 +948,10 @@ public:
     }
 
     void collectConstraints() {
+        // Check if it should initialize constraints from file or not;
+
+        this->fs.clearMainConstraintsFile();
+        int i = 0;
         for (vector<const clang::CFGBlock*>::iterator blk = this->incidentBlocks.begin(); blk != this->incidentBlocks.end(); ++blk) {
 
             cout << "Incident Block: " << (*blk)->getBlockID() << endl;
@@ -971,6 +961,7 @@ public:
 
             this->bottomUpTraverse((*blk), 0, pathConstraints);
             this->writePaths();
+            i++;
         }
     }
 
@@ -1009,6 +1000,7 @@ private:
     Incident* incident;
     vector<string> returnValues;
     vector<const clang::CFGBlock*> incidentBlocks;
+    vector<const clang::Stmt*> incidentStatements;
 };
 
 class MyCallback : public clang::ast_matchers::MatchFinder::MatchCallback {
