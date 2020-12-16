@@ -1064,8 +1064,8 @@ public:
             this->fs.writeFunctionParametersType(functionIncident->getParamTypes());
             return;
         }
-        this->fs.clearMainConstraintsFile();
         vector<vector<string>> initialConstraintsList = this->fs.readFunctionConstraints();
+        this->fs.clearMainConstraintsFile();
         cout << "List of constraints:\n";
         for (vector<string> initialConstraints : initialConstraintsList) {
             for (string c : initialConstraints)

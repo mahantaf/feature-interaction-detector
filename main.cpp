@@ -148,16 +148,20 @@ int main(int argc, const char **argv) {
     FileSystem fs = FileSystem();
 
     string fileName = "tests/single/test.cpp";
-//    string command = "foo CALL bar WRITE r";
-    string command = "bar WRITE r";
+    string command = "foo CALL bar WRITE r";
+//    string command = "bar WRITE r";
 
     vector<string> commands = parseCommand(command);
     vector<Command> commandList;
+
+    for (string c : commands)
+        cout << c << endl;
 
     // Pass 1: Fill metadata
 
     bool call = false;
     for (int i = 0; i + 2 < commands.size(); i = i + 2) {
+        cout << "Hello\n";
         string functionName = commands[i];
         string command = commands[i + 1];
         string incident = commands[i + 2];
@@ -168,13 +172,19 @@ int main(int argc, const char **argv) {
             commandList.push_back(Command(functionName, incident, command));
         } else if (call) {
             call = false;
-            vector<string> params = fs.readFunctionParameters();
-            vector<string> paramTypes = fs.readFunctionParameterTypes();
+            vector <string> params = fs.readFunctionParameters();
+            vector <string> paramTypes = fs.readFunctionParameterTypes();
             Command c = Command(functionName, incident, command);
             c.setParams(params);
             c.setParamTypes(paramTypes);
             commandList.push_back(c);
+        } else {
+            Command c = Command(functionName, incident, command);
+            commandList.push_back(c);
         }
+    }
+    for (Command c: commandList) {
+        c.print();
     }
 
     // Pass 2: Traverse and run the commands
@@ -193,10 +203,6 @@ int main(int argc, const char **argv) {
         else
             run += " 1";
         system(run.c_str());
-    }
-
-    for (Command c: commandList) {
-        c.print();
     }
 }
 
