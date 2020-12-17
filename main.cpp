@@ -147,8 +147,11 @@ int main(int argc, const char **argv) {
 
     FileSystem fs = FileSystem();
 
-    string fileName = "tests/single/test.cpp";
-    string command = "foo CALL bar WRITE r";
+//    string fileName = "tests/single/test.cpp";
+//    string command = "foo CALL bar WRITE r";
+
+    string fileName = "autonomoose_core/shuttle_manager/src/shuttle_manager_nodelet.cpp";
+    string command = "ShuttleConfirmationCb CALL processNextShuttleRequest WRITE current_state";
 
     vector<string> commands = parseCommand(command);
     vector<Command> commandList;
@@ -183,9 +186,9 @@ int main(int argc, const char **argv) {
             commandList.push_back(c);
         }
     }
-//    for (Command c: commandList) {
-//        c.print();
-//    }
+    for (Command c: commandList) {
+        c.print();
+    }
 
     // Pass 2: Traverse and run the commands
     cout << "Starting pass 2:\n";

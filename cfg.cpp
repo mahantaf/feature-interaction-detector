@@ -554,8 +554,22 @@ void getStmtOperands(const clang::Stmt* stmt, set<pair<string, string>>& operand
         }
     }
     else if (stmtClass.compare("ImplicitCastExpr") == 0 || stmtClass.compare("DeclRefExpr") == 0) {
-
         if (type.compare("")) {
+            if (stmtClass.compare("DeclRefExpr") == 0) {
+                string declType = cast<clang::DeclRefExpr>(stmt)->getDecl()->getType().getAsString();
+                vector<string> splitDecl = split(declType, ' ');
+                string exactDeclType = splitDecl[0];
+                if (exactDeclType.compare("enum") == 0) {
+                    pair <string, string> op(getStatementString(stmt), getStatementString(stmt));
+                    operands.insert(op);
+                    return;
+                }
+            } else if (stmtClass.compare("ImplicitCastExpr") == 0) {
+                const clang::Stmt* subExpr = cast<clang::ImplicitCastExpr>(stmt)->getSubExpr();
+                string subExprClassName(subExpr->getStmtClassName());
+                if (subExprClassName.compare("DeclRefExpr") == 0)
+                    return getStmtOperands(subExpr, operands, type);
+            }
             string var = getStatementString(stmt);
 
             SymbolTable *st = st->getInstance();
@@ -615,9 +629,6 @@ bool hasFunctionCall(
         const clang::Stmt *callee = callExpr->getCallee();
         const clang::Expr* const* args = callExpr->getArgs();
 
-        cout << "Found call expression\n";
-        cout << "Callee: " << getStatementString(callee) << endl;
-
         vector<string> params;
         vector<string> paramType;
         for (unsigned int i = 0; i < callExpr->getNumArgs(); ++i) {
@@ -653,16 +664,17 @@ class CallIncident : public Incident {
 public:
     CallIncident(string incident) : Incident(incident, "CALL") {}
 
-    bool hasIncident(const clang::Stmt* stmt, vector<string>& incidentValues) {
+    bool hasIncident(const clang::Stmt *stmt, vector <string> &incidentValues) {
         const string stmtClass(stmt->getStmtClassName());
-        if (stmtClass.compare("CallExpr") == 0) {
-            const clang::Stmt *callee = cast<clang::CallExpr>(stmt)->getCallee();
-            string stmtString = getStatementString(callee);
+        if (stmtClass.compare("CallExpr") == 0 || stmtClass.compare("CXXMemberCallExpr") == 0) {
+            const clang::FunctionDecl *functionDecl = cast<clang::CallExpr>(stmt)->getDirectCallee();
+            string stmtString = functionDecl->getNameInfo().getAsString();
             if (stmtString.compare(this->incident) == 0)
                 return true;
         }
         return false;
     }
+
     void print() {
         cout << "Call Incident" << endl;
     }
@@ -675,10 +687,20 @@ public:
     bool hasIncident(const clang::Stmt* stmt, vector<string>& incidentValues) {
         const string stmtClass(stmt->getStmtClassName());
         if (stmtClass.compare("BinaryOperator") == 0) {
+            cout << getStatementString(stmt) << endl;
             const clang::BinaryOperator* binaryOperator = cast<clang::BinaryOperator>(stmt);
             if (binaryOperator->isAssignmentOp()) {
                 const clang::Stmt* lhs = binaryOperator->getLHS();
-                string stmtString = getStatementString(lhs);
+
+                string stmtString;
+                string lhsStmtClass(lhs->getStmtClassName());
+
+                if (lhsStmtClass.compare("MemberExpr") == 0) {
+                    stmtString = cast<clang::MemberExpr>(lhs)->getMemberNameInfo().getAsString();
+                } else {
+                    stmtString = getStatementString(lhs);
+                }
+
                 if (stmtString.compare(this->incident) == 0)
                     return true;
             }
@@ -725,7 +747,7 @@ public:
 
     bool hasIncident(const clang::Stmt* stmt, vector<string>& incidentValues) {
         const string stmtClass(stmt->getStmtClassName());
-        if (stmtClass.compare("CallExpr") == 0) {
+        if (stmtClass.compare("CallExpr") == 0 || stmtClass.compare("CXXMemberCallExpr") == 0) {
 
             const clang::CallExpr* callExpr = cast<clang::CallExpr>(stmt);
             const clang::Stmt *callee = callExpr->getCallee();
