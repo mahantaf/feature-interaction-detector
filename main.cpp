@@ -149,7 +149,6 @@ int main(int argc, const char **argv) {
 
     string fileName = "tests/single/test.cpp";
     string command = "foo CALL bar WRITE r";
-//    string command = "bar WRITE r";
 
     vector<string> commands = parseCommand(command);
     vector<Command> commandList;
@@ -160,6 +159,8 @@ int main(int argc, const char **argv) {
     // Pass 1: Fill metadata
 
     bool call = false;
+    fs.clearFile("symbols");
+    fs.clearFile("constraints");
     for (int i = 0; i + 2 < commands.size(); i = i + 2) {
         string functionName = commands[i];
         string command = commands[i + 1];

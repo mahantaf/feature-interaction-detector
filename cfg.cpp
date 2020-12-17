@@ -353,19 +353,11 @@ public:
                 if (type.compare("LVALUE"))
                     varSymbol = this->insertNewSymbol(var);
             } else {
-                if (type.compare("LVALUE"))
-                    varSymbol = this->getVariableLastSymbol(var);
-                else {
-                    if (this->getVariableType(var).compare("LVALUE"))
-                        varSymbol = this->getVariableLastSymbol(var);
-                    else
-                        varSymbol = this->insertNewSymbol(var);
-                }
+                varSymbol = this->getVariableLastSymbol(var);
+                if (type.compare("LVALUE") == 0)
+                    this->insertNewSymbol(var);
             }
         }
-
-        if (this->getVariableType(var).compare("LVALUE"))
-            this->setVariableType(var, type);
 
         return varSymbol;
     }
@@ -473,10 +465,6 @@ protected:
         return this->symbolTable[variable].first;
     }
 
-    string getVariableType(string variable) {
-        return this->symbolTable[variable].second;
-    }
-
     bool isLiteral(string variableType) {
         if (variableType.find("Literal") != string::npos)
             return true;
@@ -488,10 +476,6 @@ protected:
             if (params[i].compare(variable) == 0)
                 return i;
         return -1;
-    }
-
-    void setVariableType(string variable, string type) {
-        this->symbolTable[variable].second = type;
     }
 
     void setVariableSymbol(string variable, string symbol) {
@@ -562,12 +546,11 @@ void getStmtOperands(const clang::Stmt* stmt, set<pair<string, string>>& operand
         const clang::Stmt *rhs = binaryOperator->getRHS();
 
         if (binaryOperator->isAssignmentOp()) {
-            getStmtOperands(rhs, operands, "RVALUE");
             getStmtOperands(lhs, operands, "LVALUE");
+            getStmtOperands(rhs, operands, "RVALUE");
         } else {
-
-            getStmtOperands(rhs, operands, type);
             getStmtOperands(lhs, operands, type);
+            getStmtOperands(rhs, operands, type);
         }
     }
     else if (stmtClass.compare("ImplicitCastExpr") == 0 || stmtClass.compare("DeclRefExpr") == 0) {
@@ -620,7 +603,6 @@ bool hasFunctionCall(
         vector<vector<string>>& paramNames,
         vector<vector<string>>& paramTypes
 ) {
-//    cout << "In has function call for: " << getStatementString(stmt) << " " << stmt->getStmtClassName() << endl;
     if (stmtClass.compare("BinaryOperator") == 0) {
         const clang::BinaryOperator *binaryOperator = cast<clang::BinaryOperator>(stmt);
         const clang::Stmt *lhs = binaryOperator->getLHS();
@@ -814,6 +796,8 @@ public:
     void replaceDeclaration(string& statement) {
         regex e("^\\S*\\s");
         statement = regex_replace(statement, e, "");
+        regex sem(";");
+        statement = regex_replace(statement, sem, "");
     }
 
     void replaceReturnStatement(string& statement) {
@@ -835,8 +819,8 @@ public:
         vector<string> splitStatement = split(statement, '=');
         string lhs = splitStatement[0], rhs = splitStatement[1];
 
-        this->replaceVariables(lhs, duplicate);
-        this->replaceVariables(rhs, operands);
+        this->replaceVariables(lhs, operands);
+        this->replaceVariables(rhs, duplicate);
 
         statement = lhs + "=" + rhs;
     }
