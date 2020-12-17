@@ -45,34 +45,6 @@ using namespace llvm;
 
 string filePath, functionName, incident, incidentType, root;
 
-//class StringExtra {
-//public:
-//  StringHandler(string str) : str(str) {};
-//
-//  string replace(string rgx, string substitute) {
-//    regex e(rgx);
-//    return regex_replace(str, e, substitute);
-//  }
-//
-//  vector<string> split(char delimiter) {
-//    vector <string> substrings;
-//    string word = "";
-//    for (auto x : str) {
-//      if (x == delimiter) {
-//        substrings.push_back(word);
-//        word = "";
-//      } else {
-//        word = word + x;
-//      }
-//    }
-//    substrings.push_back(word);
-//    return substrings;
-//  }
-//
-//private:
-//  string str;
-//};
-
 class Context {
 public:
 
@@ -537,112 +509,6 @@ set<pair<string, string>> findPairsWithSameFirst(set<pair<string, string>>& vars
     return duplicatePairs;
 }
 
-void getStmtOperands(const clang::Stmt* stmt, set<pair<string, string>>& operands, string type) {
-    const string stmtClass(stmt->getStmtClassName());
-    if (stmtClass.compare("BinaryOperator") == 0) {
-
-        const clang::BinaryOperator *binaryOperator = cast<clang::BinaryOperator>(stmt);
-        const clang::Stmt *lhs = binaryOperator->getLHS();
-        const clang::Stmt *rhs = binaryOperator->getRHS();
-
-        if (binaryOperator->isAssignmentOp()) {
-            getStmtOperands(lhs, operands, "LVALUE");
-            getStmtOperands(rhs, operands, "RVALUE");
-        } else {
-            getStmtOperands(lhs, operands, type);
-            getStmtOperands(rhs, operands, type);
-        }
-    }
-    else if (stmtClass.compare("ImplicitCastExpr") == 0 || stmtClass.compare("DeclRefExpr") == 0) {
-        if (type.compare("")) {
-            if (stmtClass.compare("DeclRefExpr") == 0) {
-                string declType = cast<clang::DeclRefExpr>(stmt)->getDecl()->getType().getAsString();
-                vector<string> splitDecl = split(declType, ' ');
-                string exactDeclType = splitDecl[0];
-                if (exactDeclType.compare("enum") == 0) {
-                    pair <string, string> op(getStatementString(stmt), getStatementString(stmt));
-                    operands.insert(op);
-                    return;
-                }
-            } else if (stmtClass.compare("ImplicitCastExpr") == 0) {
-                const clang::Stmt* subExpr = cast<clang::ImplicitCastExpr>(stmt)->getSubExpr();
-                string subExprClassName(subExpr->getStmtClassName());
-                if (subExprClassName.compare("DeclRefExpr") == 0)
-                    return getStmtOperands(subExpr, operands, type);
-            }
-            string var = getStatementString(stmt);
-
-            SymbolTable *st = st->getInstance();
-            string varSymbol = st->addVariableSymbol(var, type);
-
-            if (varSymbol.compare("")) {
-                pair <string, string> op(var, varSymbol);
-                operands.insert(op);
-            }
-        }
-
-    }
-    else if (stmtClass.compare("ParenExpr") == 0) {
-        const clang::ParenExpr *parenExpr = cast<clang::ParenExpr>(stmt);
-        const clang::Stmt *subParen = parenExpr->getSubExpr();
-        getStmtOperands(subParen, operands, type);
-    }
-    else if (stmtClass.compare("DeclStmt") == 0) {
-        const clang::DeclStmt *declStmt = cast<clang::DeclStmt>(stmt);
-        const clang::Decl* declaration = declStmt->getSingleDecl();
-        if (declaration) {
-            const clang::VarDecl* varDecl = cast<clang::VarDecl>(declaration);
-            if (varDecl && varDecl->hasInit()) {
-                const clang::Stmt* rhs = varDecl->getInit();
-                string var = varDecl->getNameAsString();
-                SymbolTable *st = st->getInstance();
-                string varSymbol = st->addVariableSymbol(var, "LVALUE");
-                if (varSymbol.compare("")) {
-                    pair <string, string> op(var, varSymbol);
-                    operands.insert(op);
-                }
-                getStmtOperands(rhs, operands, "RVALUE");
-            }
-        }
-    }
-    else if (stmtClass.compare("ReturnStmt") == 0) {
-        const clang::Stmt* returnValue = cast<clang::ReturnStmt>(stmt)->getRetValue();
-        getStmtOperands(returnValue, operands, "RVALUE");
-    }
-}
-
-bool hasFunctionCall(
-        const clang::Stmt* stmt, string stmtClass,
-        vector<string>& names,
-        vector<vector<string>>& paramNames,
-        vector<vector<string>>& paramTypes
-) {
-    if (stmtClass.compare("BinaryOperator") == 0) {
-        const clang::BinaryOperator *binaryOperator = cast<clang::BinaryOperator>(stmt);
-        const clang::Stmt *lhs = binaryOperator->getLHS();
-        const clang::Stmt *rhs = binaryOperator->getRHS();
-        return hasFunctionCall(lhs, lhs->getStmtClassName(), names, paramNames, paramTypes) ||
-               hasFunctionCall(rhs, rhs->getStmtClassName(), names, paramNames, paramTypes);
-    } else if (stmtClass.compare("CallExpr") == 0 || stmtClass.compare("CXXMemberCallExpr") == 0) {
-        const clang::CallExpr* callExpr = cast<clang::CallExpr>(stmt);
-
-        const clang::Stmt *callee = callExpr->getCallee();
-        const clang::Expr* const* args = callExpr->getArgs();
-
-        vector<string> params;
-        vector<string> paramType;
-        for (unsigned int i = 0; i < callExpr->getNumArgs(); ++i) {
-            params.push_back(getStatementString(args[i]));
-            paramType.push_back(args[i]->getStmtClassName());
-        }
-        paramNames.push_back(params);
-        paramTypes.push_back(paramType);
-        names.push_back(getStatementString(callee));
-        return true;
-    }
-    return false;
-}
-
 class Incident {
 public:
     Incident(string incident, string type) : incident(incident), type(type) {}
@@ -758,8 +624,8 @@ public:
                 const clang::Expr* const* args = callExpr->getArgs();
 
                 for (unsigned int i = 0; i < callExpr->getNumArgs(); ++i) {
-                   this->params.push_back(getStatementString(args[i]));
-                   this->paramTypes.push_back(args[i]->getStmtClassName());
+                    this->params.push_back(getStatementString(args[i]));
+                    this->paramTypes.push_back(args[i]->getStmtClassName());
                 }
                 return true;
             }
@@ -792,6 +658,118 @@ Incident* createIncident() {
     return nullptr;
 }
 
+void getStmtOperands(const clang::Stmt* stmt, set<pair<string, string>>& operands, string type) {
+    const string stmtClass(stmt->getStmtClassName());
+    if (stmtClass.compare("BinaryOperator") == 0) {
+
+        const clang::BinaryOperator *binaryOperator = cast<clang::BinaryOperator>(stmt);
+        const clang::Stmt *lhs = binaryOperator->getLHS();
+        const clang::Stmt *rhs = binaryOperator->getRHS();
+
+        if (binaryOperator->isAssignmentOp()) {
+            Incident* incident = createIncident();
+            vector<string> temp;
+            if (incident->getType().compare("WRITE") == 0 && incident->hasIncident(stmt, temp)) {
+                getStmtOperands(lhs, operands, "IVALUE");
+            } else {
+                getStmtOperands(lhs, operands, "LVALUE");
+            }
+            if (operands.size())
+                getStmtOperands(rhs, operands, "RVALUE");
+        } else {
+            getStmtOperands(lhs, operands, type);
+            getStmtOperands(rhs, operands, type);
+        }
+    }
+    else if (stmtClass.compare("ImplicitCastExpr") == 0 || stmtClass.compare("DeclRefExpr") == 0 || stmtClass.compare("MemberExpr") == 0) {
+        if (type.compare("")) {
+            if (stmtClass.compare("DeclRefExpr") == 0) {
+                string declType = cast<clang::DeclRefExpr>(stmt)->getDecl()->getType().getAsString();
+                vector<string> splitDecl = split(declType, ' ');
+                string exactDeclType = splitDecl[0];
+                if (exactDeclType.compare("enum") == 0) {
+//                    pair <string, string> op(getStatementString(stmt), getStatementString(stmt));
+//                    operands.insert(op);
+                    return;
+                }
+            } else if (stmtClass.compare("ImplicitCastExpr") == 0) {
+                const clang::Stmt* subExpr = cast<clang::ImplicitCastExpr>(stmt)->getSubExpr();
+                string subExprClassName(subExpr->getStmtClassName());
+                if (subExprClassName.compare("DeclRefExpr") == 0)
+                    return getStmtOperands(subExpr, operands, type);
+            }
+            string var = getStatementString(stmt);
+            SymbolTable *st = st->getInstance();
+            string varSymbol = st->addVariableSymbol(var, type);
+
+            if (varSymbol.compare("")) {
+                pair <string, string> op(var, varSymbol);
+                operands.insert(op);
+            }
+        }
+
+    }
+    else if (stmtClass.compare("ParenExpr") == 0) {
+        const clang::ParenExpr *parenExpr = cast<clang::ParenExpr>(stmt);
+        const clang::Stmt *subParen = parenExpr->getSubExpr();
+        getStmtOperands(subParen, operands, type);
+    }
+    else if (stmtClass.compare("DeclStmt") == 0) {
+        const clang::DeclStmt *declStmt = cast<clang::DeclStmt>(stmt);
+        const clang::Decl* declaration = declStmt->getSingleDecl();
+        if (declaration) {
+            const clang::VarDecl* varDecl = cast<clang::VarDecl>(declaration);
+            if (varDecl && varDecl->hasInit()) {
+                const clang::Stmt* rhs = varDecl->getInit();
+                string var = varDecl->getNameAsString();
+                SymbolTable *st = st->getInstance();
+                string varSymbol = st->addVariableSymbol(var, "LVALUE");
+                if (varSymbol.compare("")) {
+                    pair <string, string> op(var, varSymbol);
+                    operands.insert(op);
+                }
+                getStmtOperands(rhs, operands, "RVALUE");
+            }
+        }
+    }
+    else if (stmtClass.compare("ReturnStmt") == 0) {
+        const clang::Stmt* returnValue = cast<clang::ReturnStmt>(stmt)->getRetValue();
+        getStmtOperands(returnValue, operands, "RVALUE");
+    }
+}
+
+bool hasFunctionCall(
+        const clang::Stmt* stmt, string stmtClass,
+        vector<string>& names,
+        vector<vector<string>>& paramNames,
+        vector<vector<string>>& paramTypes
+) {
+    if (stmtClass.compare("BinaryOperator") == 0) {
+        const clang::BinaryOperator *binaryOperator = cast<clang::BinaryOperator>(stmt);
+        const clang::Stmt *lhs = binaryOperator->getLHS();
+        const clang::Stmt *rhs = binaryOperator->getRHS();
+        return hasFunctionCall(lhs, lhs->getStmtClassName(), names, paramNames, paramTypes) ||
+               hasFunctionCall(rhs, rhs->getStmtClassName(), names, paramNames, paramTypes);
+    } else if (stmtClass.compare("CallExpr") == 0 || stmtClass.compare("CXXMemberCallExpr") == 0) {
+        const clang::CallExpr* callExpr = cast<clang::CallExpr>(stmt);
+
+        const clang::Stmt *callee = callExpr->getCallee();
+        const clang::Expr* const* args = callExpr->getArgs();
+
+        vector<string> params;
+        vector<string> paramType;
+        for (unsigned int i = 0; i < callExpr->getNumArgs(); ++i) {
+            params.push_back(getStatementString(args[i]));
+            paramType.push_back(args[i]->getStmtClassName());
+        }
+        paramNames.push_back(params);
+        paramTypes.push_back(paramType);
+        names.push_back(getStatementString(callee));
+        return true;
+    }
+    return false;
+}
+
 class Path {
 public:
     Path(vector<string> constraints) {
@@ -813,6 +791,8 @@ public:
         for (pair<string, string> p: vars) {
             regex e(p.first + "((?=\\W)|$)");
             stmt = regex_replace(stmt, e, p.second);
+            regex em("->");
+            stmt = regex_replace(stmt, em, "_");
         }
     }
     void replaceDeclaration(string& statement) {
@@ -912,8 +892,6 @@ public:
 
                 string statement = getStatementString(stmt);
 
-//                cout << "Statement: " << statement << endl;
-
                 vector<string> funcNames;
                 vector<vector<string>> paramNames;
                 vector<vector<string>> paramTypes;
@@ -966,7 +944,7 @@ public:
             set<pair<string, string>> operands;
             const clang::Stmt* tc = block->getTerminatorCondition(true);
             string className = tc->getStmtClassName();
-            if(className.compare("OpaqueValueExpr") == 0) {
+            if (className.compare("OpaqueValueExpr") == 0) {
                 const clang::OpaqueValueExpr *opaqueValueExpr = cast<clang::OpaqueValueExpr>(tc);
                 cout << "OPAQUE VALUE: " << endl;
                 opaqueValueExpr->dump();
