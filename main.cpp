@@ -154,14 +154,13 @@ int main(int argc, const char **argv) {
     vector<string> commands = parseCommand(command);
     vector<Command> commandList;
 
-    for (string c : commands)
-        cout << c << endl;
+//    for (string c : commands)
+//        cout << c << endl;
 
     // Pass 1: Fill metadata
 
     bool call = false;
     for (int i = 0; i + 2 < commands.size(); i = i + 2) {
-        cout << "Hello\n";
         string functionName = commands[i];
         string command = commands[i + 1];
         string incident = commands[i + 2];
@@ -183,12 +182,14 @@ int main(int argc, const char **argv) {
             commandList.push_back(c);
         }
     }
-    for (Command c: commandList) {
-        c.print();
-    }
+//    for (Command c: commandList) {
+//        c.print();
+//    }
 
     // Pass 2: Traverse and run the commands
+    cout << "Starting pass 2:\n";
     fs.clearFile("symbols");
+    fs.clearFile("constraints");
     for (vector<Command>::reverse_iterator it = commandList.rbegin(); it != commandList.rend(); ++it) {
         Command currentCommand = (*it);
         fs.clearFile("params");

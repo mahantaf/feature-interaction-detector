@@ -1073,7 +1073,10 @@ public:
             cout << endl;
         }
         if (initialConstraintsList.size()) {
+            SymbolTable *st = st->getInstance();
+            map<string, pair<set<string>, string>>tableCopy = st->getTable();
             for (vector<string> initialConstraints : initialConstraintsList) {
+                st->setTable(tableCopy);
                 for (vector<const clang::CFGBlock*>::iterator blk = this->incidentBlocks.begin(); blk != this->incidentBlocks.end(); ++blk) {
 
                     cout << "Incident Block: " << (*blk)->getBlockID() << endl;
