@@ -1,5 +1,6 @@
 .DS_Store
 cfg
+main
 *.txt
 test.cpp
 .idea/

@@ -548,9 +548,11 @@ public:
         const string stmtClass(stmt->getStmtClassName());
         if (stmtClass.compare("CallExpr") == 0 || stmtClass.compare("CXXMemberCallExpr") == 0) {
             const clang::FunctionDecl *functionDecl = cast<clang::CallExpr>(stmt)->getDirectCallee();
-            string stmtString = functionDecl->getNameInfo().getAsString();
-            if (stmtString.compare(this->incident) == 0)
+            if (functionDecl) {
+              string stmtString = functionDecl->getNameInfo().getAsString();
+              if (stmtString.compare(this->incident) == 0)
                 return true;
+            }
         }
         return false;
     }
@@ -567,7 +569,7 @@ public:
     bool hasIncident(const clang::Stmt* stmt, vector<string>& incidentValues) {
         const string stmtClass(stmt->getStmtClassName());
         if (stmtClass.compare("BinaryOperator") == 0) {
-            cout << getStatementString(stmt) << endl;
+//            cout << getStatementString(stmt) << endl;
             const clang::BinaryOperator* binaryOperator = cast<clang::BinaryOperator>(stmt);
             if (binaryOperator->isAssignmentOp()) {
                 const clang::Stmt* lhs = binaryOperator->getLHS();
@@ -715,7 +717,6 @@ void getStmtOperands(const clang::Stmt* stmt, set<pair<string, string>>& operand
             string var = getStatementString(stmt);
             SymbolTable *st = st->getInstance();
             string varSymbol = st->addVariableSymbol(var, type);
-
             if (varSymbol.compare("")) {
                 pair <string, string> op(var, varSymbol);
                 operands.insert(op);
@@ -758,30 +759,31 @@ bool hasFunctionCall(
         vector<vector<string>>& paramNames,
         vector<vector<string>>& paramTypes
 ) {
-    if (stmtClass.compare("BinaryOperator") == 0) {
-        const clang::BinaryOperator *binaryOperator = cast<clang::BinaryOperator>(stmt);
-        const clang::Stmt *lhs = binaryOperator->getLHS();
-        const clang::Stmt *rhs = binaryOperator->getRHS();
-        return hasFunctionCall(lhs, lhs->getStmtClassName(), names, paramNames, paramTypes) ||
-               hasFunctionCall(rhs, rhs->getStmtClassName(), names, paramNames, paramTypes);
-    } else if (stmtClass.compare("CallExpr") == 0 || stmtClass.compare("CXXMemberCallExpr") == 0) {
-        const clang::CallExpr* callExpr = cast<clang::CallExpr>(stmt);
+  if (stmtClass.compare("BinaryOperator") == 0) {
+    const clang::BinaryOperator *binaryOperator = cast<clang::BinaryOperator>(stmt);
+    const clang::Stmt *lhs = binaryOperator->getLHS();
+    const clang::Stmt *rhs = binaryOperator->getRHS();
+    return hasFunctionCall(lhs, lhs->getStmtClassName(), names, paramNames, paramTypes) ||
+           hasFunctionCall(rhs, rhs->getStmtClassName(), names, paramNames, paramTypes);
+  } else if (stmtClass.compare("CallExpr") == 0 || stmtClass.compare("CXXMemberCallExpr") == 0) {
 
-        const clang::Stmt *callee = callExpr->getCallee();
-        const clang::Expr* const* args = callExpr->getArgs();
+    const clang::CallExpr *callExpr = cast<clang::CallExpr>(stmt);
 
-        vector<string> params;
-        vector<string> paramType;
-        for (unsigned int i = 0; i < callExpr->getNumArgs(); ++i) {
-            params.push_back(getStatementString(args[i]));
-            paramType.push_back(args[i]->getStmtClassName());
-        }
-        paramNames.push_back(params);
-        paramTypes.push_back(paramType);
-        names.push_back(getStatementString(callee));
-        return true;
+    const clang::Stmt *callee = callExpr->getCallee();
+    const clang::Expr *const *args = callExpr->getArgs();
+
+    vector <string> params;
+    vector <string> paramType;
+    for (unsigned int i = 0; i < callExpr->getNumArgs(); ++i) {
+      params.push_back(getStatementString(args[i]));
+      paramType.push_back(args[i]->getStmtClassName());
     }
-    return false;
+    paramNames.push_back(params);
+    paramTypes.push_back(paramType);
+    names.push_back(getStatementString(callee));
+    return true;
+  }
+  return false;
 }
 
 class Path {
@@ -906,6 +908,8 @@ public:
 
                 string statement = getStatementString(stmt);
 
+                cout << statement << endl;
+
                 vector<string> funcNames;
                 vector<vector<string>> paramNames;
                 vector<vector<string>> paramTypes;
@@ -919,7 +923,7 @@ public:
                         se->saveParameters(name, paramNames[i]);
                         se->saveParameterTypes(name, paramNames[i], paramTypes[i]);
 
-                        string sysCall = "./cfg " + filePath + " -- " + name + " c RETURN";
+                        string sysCall = "./cfg " + filePath + " -- " + name + " c RETURN 0";
                         system(sysCall.c_str());
 
                         se->loadState();
@@ -991,15 +995,17 @@ public:
     }
 
     void addFunction(vector<vector<string>>& functionConstraintsList) {
-        vector<vector<string>> newConstraintsList;
-        for (vector<string> c: this->constraintsList) {
-            for (vector<string> fc: functionConstraintsList) {
-                vector<string> newConstraints = c;
-                newConstraints.insert(newConstraints.end(), fc.begin(), fc.end());
-                newConstraintsList.push_back(newConstraints);
+        if (functionConstraintsList.size()) {
+            vector<vector<string>> newConstraintsList;
+            for (vector<string> c: this->constraintsList) {
+                for (vector<string> fc: functionConstraintsList) {
+                  vector<string> newConstraints = c;
+                  newConstraints.insert(newConstraints.end(), fc.begin(), fc.end());
+                  newConstraintsList.push_back(newConstraints);
+                }
             }
+            this->constraintsList = newConstraintsList;
         }
-        this->constraintsList = newConstraintsList;
     }
 
 private:

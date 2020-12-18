@@ -207,6 +207,7 @@ int main(int argc, const char **argv) {
             run += " 0";
         else
             run += " 1";
+        cout << run << endl;
         system(run.c_str());
     }
 }
