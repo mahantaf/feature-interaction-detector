@@ -306,17 +306,24 @@ public:
          *          If last type is LVALUE -> create new symbol
          */
         string varSymbol = "";
-        if ((this->type.compare("RETURN") == 0 || this->type.compare("FUNCTION") == 0) && this->isInParams(var) != -1) {
-            int paramIndex = this->isInParams(var);
-            string passParam = this->passParams[paramIndex];
-            string passParamType = this->passParamTypes[paramIndex];
+        if ((this->type.compare("RETURN") == 0 || this->type.compare("FUNCTION") == 0)) {
+            if (this->isInParams(var) != -1) {
+                int paramIndex = this->isInParams(var);
+                string passParam = this->passParams[paramIndex];
+                string passParamType = this->passParamTypes[paramIndex];
 
-            if (this->isLiteral(passParamType)) {
-                varSymbol = passParam;
-                setVariableSymbol(var, varSymbol);
-            } else {
+                if (this->isLiteral(passParamType)) {
+                    varSymbol = passParam;
+                    setVariableSymbol(var, varSymbol);
+                } else {
+                    this->type = "";
+                    varSymbol = addVariableSymbol(passParam, type);
+                    setVariableSymbol(var, varSymbol);
+                    this->type = "RETURN";
+                }
+            } else if (this->isMemberVariable(var)) {
                 this->type = "";
-                varSymbol = addVariableSymbol(passParam, type);
+                varSymbol = addVariableSymbol(var, type);
                 setVariableSymbol(var, varSymbol);
                 this->type = "RETURN";
             }
@@ -435,6 +442,13 @@ protected:
 
     set<string> getVariableSymbols(string variable) {
         return this->symbolTable[variable].first;
+    }
+
+    bool isMemberVariable(string variable) {
+        regex e ("this->");
+        if (regex_match(variable, e))
+            return true;
+        return true;
     }
 
     bool isLiteral(string variableType) {
