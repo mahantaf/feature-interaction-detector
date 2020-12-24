@@ -58,13 +58,29 @@ public:
         return this->context;
     }
 
+    vector<vector<string>> getInitialConstraintsList() {
+        return this->initialConstraintsList;
+    }
+
+    bool getConstraintsListSet() {
+        return this->constraintsListSet;
+    }
+
     void setContext(clang::ast_matchers::MatchFinder::MatchResult context) {
         this->context = &context;
     }
+
+    void setInitialConstraintsList(vector<vector<string>> initialConstraintsList) {
+        this->initialConstraintsList = initialConstraintsList;
+        this->constraintsListSet = true;
+    }
+
 private:
-    Context() {}
+    Context() { this->constraintsListSet = false; }
     static Context *instance;
     clang::ast_matchers::MatchFinder::MatchResult* context;
+    vector<vector<string>> initialConstraintsList;
+    bool constraintsListSet;
 };
 
 string getStatementString(const clang::Stmt* stmt) {
@@ -658,6 +674,98 @@ private:
     vector<string> paramTypes;
 };
 
+class VarInFuncIncident: public Incident {
+public:
+    VarInFuncIncident(string incident) : Incident(incident, "VARINFUNC") {}
+
+    bool hasIncident(const clang::Stmt *stmt, vector <string> &incidentValues) {
+        return true;
+    }
+
+    int hasIncidentExtend(const clang::Stmt *stmt, vector<const clang::Stmt*> &incidentValues) {
+        const clang::IfStmt *ifStmt = cast<clang::IfStmt>(stmt);
+
+        set<string> variables;
+        const clang::Stmt* conditionStatement = ifStmt->getCond();
+        this->getConditionVariables(conditionStatement, variables);
+
+        if (hasVariable(variables)) {
+            const clang::Stmt* thenStatement = ifStmt->getThen();
+            const clang::Stmt* elseStatement = ifStmt->getElse();
+
+            if (thenStatement && this->hasCall(thenStatement)) {
+                incidentValues.push_back(conditionStatement);
+                return 1;
+            }
+            if (elseStatement && this->hasCall(elseStatement)) {
+                incidentValues.push_back(conditionStatement);
+                return 0;
+            }
+        }
+        return -1;
+    };
+
+    bool hasCall(const clang::Stmt* stmt) {
+        CallIncident callIncident(this->incident);
+        vector <string> incidentValues;
+        for (clang::ConstStmtIterator it = stmt->child_begin(); it != stmt->child_end(); it++) {
+            const clang::Stmt* child = (*it);
+            if (callIncident.hasIncident(child, incidentValues))
+                return true;
+        }
+        if (callIncident.hasIncident(stmt, incidentValues))
+            return true;
+        return false;
+    }
+
+    bool hasVariable(set<string>& variables) {
+        for (string variable: variables)
+            if (variable.compare(functionName) == 0)
+                return true;
+        return false;
+    }
+
+    void getConditionVariables(const clang::Stmt* stmt, set<string>& variables) {
+        const string stmtClass(stmt->getStmtClassName());
+        if (stmtClass.compare("ParenExpr") == 0) {
+
+            const clang::ParenExpr *parenExpr = cast<clang::ParenExpr>(stmt);
+            const clang::Stmt *subParen = parenExpr->getSubExpr();
+            getConditionVariables(subParen, variables);
+
+        } else if (stmtClass.compare("BinaryOperator") == 0) {
+
+            const clang::BinaryOperator *binaryOperator = cast<clang::BinaryOperator>(stmt);
+            const clang::Stmt *lhs = binaryOperator->getLHS();
+            const clang::Stmt *rhs = binaryOperator->getRHS();
+            getConditionVariables(lhs, variables);
+            getConditionVariables(rhs, variables);
+
+        } else if (stmtClass.compare("UnaryOperator") == 0) {
+
+            const clang::Stmt *subExpr = cast<clang::UnaryOperator>(stmt)->getSubExpr();
+            getConditionVariables(subExpr, variables);
+
+        } else if (stmtClass.compare("ImplicitCastExpr") == 0) {
+
+            const clang::Stmt *subExpr = cast<clang::ImplicitCastExpr>(stmt)->getSubExpr();
+            getConditionVariables(subExpr, variables);
+
+        } else if (stmtClass.compare("MemberExpr") == 0) {
+
+            variables.insert(cast<clang::MemberExpr>(stmt)->getMemberNameInfo().getAsString());
+
+        } else if (stmtClass.compare("DeclRefExpr") == 0) {
+
+            variables.insert(getStatementString(stmt));
+        }
+    }
+
+    void print() {
+        cout << "VarInFunc Incident" << endl;
+    }
+};
+
 Incident* createIncident() {
     if (incidentType.compare("CALL") == 0) {
         return new CallIncident(incident);
@@ -670,6 +778,9 @@ Incident* createIncident() {
     }
     if (incidentType.compare("FUNCTION") == 0) {
         return new FunctionIncident(incident);
+    }
+    if (incidentType.compare("VARINFUNC") == 0) {
+        return new VarInFuncIncident(incident);
     }
     return nullptr;
 }
@@ -753,12 +864,7 @@ void getStmtOperands(const clang::Stmt* stmt, set<pair<string, string>>& operand
     }
 }
 
-bool hasFunctionCall(
-        const clang::Stmt* stmt, string stmtClass,
-        vector<string>& names,
-        vector<vector<string>>& paramNames,
-        vector<vector<string>>& paramTypes
-) {
+bool hasFunctionCall(const clang::Stmt* stmt, string stmtClass, vector<string>& names, vector<vector<string>>& paramNames, vector<vector<string>>& paramTypes) {
   if (stmtClass.compare("BinaryOperator") == 0) {
     const clang::BinaryOperator *binaryOperator = cast<clang::BinaryOperator>(stmt);
     const clang::Stmt *lhs = binaryOperator->getLHS();
@@ -807,6 +913,8 @@ public:
         for (pair<string, string> p: vars) {
             regex e(p.first + "((?=\\W)|$)");
             stmt = regex_replace(stmt, e, p.second);
+        }
+        for (pair<string, string> p: vars) {
             regex em("->");
             stmt = regex_replace(stmt, em, "_");
         }
@@ -955,6 +1063,17 @@ public:
         return constraintsList;
     }
 
+    const string getIfStmtCondition(const clang::Stmt* statement, bool _if) {
+        set<pair<string, string>> operands;
+
+        getStmtOperands(statement, operands, "COND");
+
+        string stmt = getStatementString(statement);
+        this->transpiler.replaceVariables(stmt, operands);
+
+        return _if ? (stmt) : ("!(" + stmt + ")");
+    }
+
     const string getTerminatorCondition(const clang::CFGBlock* block, unsigned int previousBlockId) {
         const clang::Stmt *terminatorStmt = block->getTerminatorStmt();
         if (terminatorStmt && terminatorStmt->getStmtClass() == clang::Stmt::IfStmtClass) {
@@ -962,14 +1081,14 @@ public:
             set<pair<string, string>> operands;
             const clang::Stmt* tc = block->getTerminatorCondition(true);
             string className = tc->getStmtClassName();
-            if (className.compare("OpaqueValueExpr") == 0) {
-                const clang::OpaqueValueExpr *opaqueValueExpr = cast<clang::OpaqueValueExpr>(tc);
-                cout << "OPAQUE VALUE: " << endl;
-                opaqueValueExpr->dump();
-                cout << "SOURCE VALUE: " << endl;
-                opaqueValueExpr->getSourceExpr()->dump();
-
-            }
+//            if (className.compare("OpaqueValueExpr") == 0) {
+//                const clang::OpaqueValueExpr *opaqueValueExpr = cast<clang::OpaqueValueExpr>(tc);
+//                cout << "OPAQUE VALUE: " << endl;
+//                opaqueValueExpr->dump();
+//                cout << "SOURCE VALUE: " << endl;
+//                opaqueValueExpr->getSourceExpr()->dump();
+//
+//            }
             getStmtOperands(block->getTerminatorCondition(), operands, "COND");
 
             string stmt;
@@ -1020,7 +1139,8 @@ public:
         this->fs = FileSystem();
         this->cfgBlockHandler = CFGBlockHandler();
         this->incident = createIncident();
-        this->cfg = &cfg;
+        if (cfg)
+            this->cfg = &cfg;
     }
 
     void findIncidents() {
@@ -1036,6 +1156,44 @@ public:
                 }
             }
             blk->dump();
+        }
+    }
+
+    void findStatementIncident(const clang::Stmt* stmt) {
+
+        VarInFuncIncident* varInFuncIncident = dynamic_cast<VarInFuncIncident*>(this->incident);
+
+        vector<const clang::Stmt*> incidentValues;
+        int result = varInFuncIncident->hasIncidentExtend(stmt, incidentValues);
+
+        if (result != -1) {
+            bool _if = result == 1;
+            Context *context = context->getInstance();
+            vector<vector<string>> initialConstraintsList = context->getInitialConstraintsList();
+
+            if (initialConstraintsList.size()) {
+                SymbolTable *st = st->getInstance();
+                map <string, pair<set<string>, string>> tableCopy = st->getTable();
+                for (const clang::Stmt* statement : incidentValues) {
+                    this->paths.clear();
+                    for (vector<string> initialConstraints : initialConstraintsList) {
+                        st->setTable(tableCopy);
+                        vector<string> constraints = initialConstraints;
+                        string constraint = this->cfgBlockHandler.getIfStmtCondition(statement, _if);
+                        constraints.push_back(constraint);
+                        this->paths.push_back(Path(constraints));
+                    }
+                }
+            } else {
+                for (const clang::Stmt* statement : incidentValues) {
+                    this->paths.clear();
+                    vector<string> constraints;
+                    string constraint = this->cfgBlockHandler.getIfStmtCondition(statement, _if);
+                    constraints.push_back(constraint);
+                    this->paths.push_back(Path(constraints));
+                }
+            }
+            this->writePaths();
         }
     }
 
@@ -1059,6 +1217,14 @@ public:
                 this->bottomUpTraverse((*I).getReachableBlock(), startBlock->getBlockID(), constraintsCopy);
             }
         }
+    }
+
+    vector<vector<string>> readConstraintsList() {
+        return this->fs.readFunctionConstraints();
+    }
+
+    void clearConstraintsList() {
+        this->fs.clearMainConstraintsFile();
     }
 
     void collectConstraints() {
@@ -1151,19 +1317,32 @@ public:
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) {
         Context *context = context->getInstance();
         context->setContext(Result);
+        CFGHandler cfgHandler(nullptr);
+        if (!context->getConstraintsListSet()) {
+            context->setInitialConstraintsList(cfgHandler.readConstraintsList());
+            cfgHandler.clearConstraintsList();
+        }
+
         if (incidentType.compare("VARINFUNC") == 0 || incidentType.compare("VARWRITE") == 0) {
+
+            SymbolTable *se = se->getInstance();
+            se->setType("FUNCTION");
+
             const auto* If = Result.Nodes.getNodeAs<clang::IfStmt>("if");
             clang::SourceLocation SL = If->getBeginLoc();
             const clang::SourceManager* SM = Result.SourceManager;
             if (SM->isInMainFile(SL)) {
                 // do the job
+//                cout << getStatementString(If) << endl;
+                CFGHandler cfgHandler(nullptr);
+                cfgHandler.findStatementIncident(If);
                 return;
             }
         } else {
             const auto* Function = Result.Nodes.getNodeAs<clang::FunctionDecl>("fn");
             if (Function->isThisDeclarationADefinition()) {
                 SymbolTable *se = se->getInstance();
-                se->loadState();
+//                se->loadState();
                 vector <string> params;
                 for (clang::FunctionDecl::param_const_iterator I = Function->param_begin(), E = Function->param_end();
                      I != E; ++I) {
@@ -1247,8 +1426,9 @@ int main(int argc, const char **argv) {
     incidentType = *(&argv[5]);
     root = *(&argv[6]);
 
-    executeAction(argc, argv);
     SymbolTable* se = se->getInstance();
+    se->loadState();
+    executeAction(argc, argv);
     se->saveState();
 
     return 0;
