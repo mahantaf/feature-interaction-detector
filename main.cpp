@@ -150,8 +150,14 @@ int main(int argc, const char **argv) {
 //    string fileName = "tests/single/test.cpp";
 //    string command = "foo CALL bar WRITE r";
 
+// shuttle_manager::ShuttleManagerNodelet::ShuttleConfirmationCb
+// WRITE shuttle_manager::ShuttleManagerNodelet::current_state
+
     string fileName = "autonomoose_core/shuttle_manager/src/shuttle_manager_nodelet.cpp";
-    string command = "ShuttleConfirmationCb CALL processNextShuttleRequest WRITE current_state";
+    string command = "ShuttleConfirmationCb WRITE current_state";
+
+//    string fileName = "autonomoose_core/route_publisher/src/route_publisher_nodelet.cpp";
+//    string command = "vehicleStateCb CALL updatePath CALL updateLocalization WRITE previous_route_plan";
 
     vector<string> commands = parseCommand(command);
     vector<Command> commandList;
@@ -189,7 +195,6 @@ int main(int argc, const char **argv) {
     for (Command c: commandList) {
         c.print();
     }
-
     // Pass 2: Traverse and run the commands
     cout << "Starting pass 2:\n";
     fs.clearFile("symbols");
