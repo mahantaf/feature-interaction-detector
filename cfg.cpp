@@ -43,7 +43,11 @@
 using namespace std;
 using namespace llvm;
 
-string filePath, functionName, incident, incidentType, root;
+string filePath, functionName, incident, incidentType, root, varInFuncCount;
+
+int varInFuncCounter = 0;
+bool varInFuncLock = false;
+bool varInFuncTypeLock = false;
 
 class Context {
 public:
@@ -254,6 +258,18 @@ public:
         return this->writeConstraints(paramTypes, file);
     }
 
+    void writeVarInFuncParametersType(vector<string> paramTypes) {
+        string fileName = this->folder + this->functionParameterTypesFile;
+        if (varInFuncTypeLock) {
+            ofstream file (fileName, ios_base::app);
+            return this->writeConstraints(paramTypes, file);
+        } else {
+            varInFuncTypeLock = true;
+            ofstream file (fileName, ofstream::out | ofstream::trunc);
+            return this->writeConstraints(paramTypes, file);
+        }
+    }
+
     void writeParameters(string functionName, vector<string> params) {
         string fileName = this->folder + functionName + this->parametersFile;
         ofstream file (fileName, ofstream::out | ofstream::trunc);
@@ -261,10 +277,21 @@ public:
     }
 
     void writeFunctionParameters(vector<string> params) {
-
         string fileName = this->folder + this->functionParametersFile;
         ofstream file (fileName, ofstream::out | ofstream::trunc);
         return this->writeConstraints(params, file);
+    }
+
+    void writeVarInFuncParameters(vector<string> params) {
+        string fileName = this->folder + this->functionParametersFile;
+        if (varInFuncLock) {
+            ofstream file (fileName, ios_base::app);
+            return this->writeConstraints(params, file);
+        } else {
+            varInFuncLock = true;
+            ofstream file (fileName, ofstream::out | ofstream::trunc);
+            return this->writeConstraints(params, file);
+        }
     }
 
     void writeMainConstraints(vector<string>& constraints) {
@@ -277,7 +304,6 @@ public:
         file.open(this->folder + this->returnConstraintFile, ios_base::app);
         return this->writeConstraints(constraints, file);
     }
-
 
 protected:
     void writeConstraints(vector<string>& constraints, ofstream& file) {
@@ -347,9 +373,11 @@ public:
             if (this->getVariableSymbols(var).size() == 0) {
                 if (type.compare("LVALUE"))
                     varSymbol = this->insertNewSymbol(var);
+                if (type.compare("IVALUE") == 0)
+                    this->insertNewSymbol(var);
             } else {
                 varSymbol = this->getVariableLastSymbol(var);
-                if (type.compare("LVALUE") == 0)
+                if (type.compare("LVALUE") == 0 || type.compare("IVALUE") == 0)
                     this->insertNewSymbol(var);
             }
         }
@@ -643,23 +671,35 @@ public:
         return this->paramTypes;
     }
 
+    void setParamsAndParamTypes(const clang::Stmt* stmt) {
+
+        const clang::CallExpr* callExpr = cast<clang::CallExpr>(stmt);
+        const clang::Expr* const* args = callExpr->getArgs();
+
+        for (unsigned int i = 0; i < callExpr->getNumArgs(); ++i) {
+            this->params.push_back(getStatementString(args[i]));
+            this->paramTypes.push_back(args[i]->getStmtClassName());
+        }
+    }
+
     bool hasIncident(const clang::Stmt* stmt, vector<string>& incidentValues) {
         const string stmtClass(stmt->getStmtClassName());
         if (stmtClass.compare("CallExpr") == 0 || stmtClass.compare("CXXMemberCallExpr") == 0) {
 
             const clang::CallExpr* callExpr = cast<clang::CallExpr>(stmt);
-            const clang::Stmt *callee = callExpr->getCallee();
+            const clang::FunctionDecl *functionDecl = cast<clang::CallExpr>(stmt)->getDirectCallee();
 
-            string stmtString = getStatementString(callee);
-            if (stmtString.compare(this->incident) == 0) {
+            if (functionDecl) {
+                string stmtString = functionDecl->getNameInfo().getAsString();
+                if (stmtString.compare(this->incident) == 0) {
+                    const clang::Expr* const* args = callExpr->getArgs();
 
-                const clang::Expr* const* args = callExpr->getArgs();
-
-                for (unsigned int i = 0; i < callExpr->getNumArgs(); ++i) {
-                    this->params.push_back(getStatementString(args[i]));
-                    this->paramTypes.push_back(args[i]->getStmtClassName());
+                    for (unsigned int i = 0; i < callExpr->getNumArgs(); ++i) {
+                        this->params.push_back(getStatementString(args[i]));
+                        this->paramTypes.push_back(args[i]->getStmtClassName());
+                    }
+                    return true;
                 }
-                return true;
             }
         }
         return false;
@@ -677,6 +717,14 @@ private:
 class VarInFuncIncident: public Incident {
 public:
     VarInFuncIncident(string incident) : Incident(incident, "VARINFUNC") {}
+
+    vector<string> getParams() {
+        return this->params;
+    }
+
+    vector<string> getParamTypes() {
+        return this->paramTypes;
+    }
 
     bool hasIncident(const clang::Stmt *stmt, vector <string> &incidentValues) {
         return true;
@@ -710,11 +758,21 @@ public:
         vector <string> incidentValues;
         for (clang::ConstStmtIterator it = stmt->child_begin(); it != stmt->child_end(); it++) {
             const clang::Stmt* child = (*it);
-            if (callIncident.hasIncident(child, incidentValues))
+            if (callIncident.hasIncident(child, incidentValues)) {
+                FunctionIncident functionIncident(this->incident);
+                functionIncident.setParamsAndParamTypes(child);
+                this->params = functionIncident.getParams();
+                this->paramTypes = functionIncident.getParamTypes();
                 return true;
+            }
         }
-        if (callIncident.hasIncident(stmt, incidentValues))
+        if (callIncident.hasIncident(stmt, incidentValues)) {
+            FunctionIncident functionIncident(this->incident);
+            functionIncident.setParamsAndParamTypes(stmt);
+            this->params = functionIncident.getParams();
+            this->paramTypes = functionIncident.getParamTypes();
             return true;
+        }
         return false;
     }
 
@@ -764,6 +822,9 @@ public:
     void print() {
         cout << "VarInFunc Incident" << endl;
     }
+private:
+    vector<string> params;
+    vector<string> paramTypes;
 };
 
 Incident* createIncident() {
@@ -779,7 +840,7 @@ Incident* createIncident() {
     if (incidentType.compare("FUNCTION") == 0) {
         return new FunctionIncident(incident);
     }
-    if (incidentType.compare("VARINFUNC") == 0) {
+    if (incidentType.compare("VARINFUNC") == 0 || incidentType.compare("VARINFUNCEXTEND") == 0) {
         return new VarInFuncIncident(incident);
     }
     return nullptr;
@@ -815,8 +876,6 @@ void getStmtOperands(const clang::Stmt* stmt, set<pair<string, string>>& operand
                 vector<string> splitDecl = split(declType, ' ');
                 string exactDeclType = splitDecl[0];
                 if (exactDeclType.compare("enum") == 0) {
-//                    pair <string, string> op(getStatementString(stmt), getStatementString(stmt));
-//                    operands.insert(op);
                     return;
                 }
             } else if (stmtClass.compare("ImplicitCastExpr") == 0) {
@@ -1159,6 +1218,16 @@ public:
         }
     }
 
+    void findChildStatementIncident(const clang::Stmt* stmt) {
+        VarInFuncIncident* varInFuncIncident = dynamic_cast<VarInFuncIncident*>(this->incident);
+        vector<const clang::Stmt*> incidentValues;
+        int result = varInFuncIncident->hasIncidentExtend(stmt, incidentValues);
+        if (result != -1) {
+            this->fs.writeVarInFuncParameters(varInFuncIncident->getParams());
+            this->fs.writeVarInFuncParametersType(varInFuncIncident->getParamTypes());
+        }
+    }
+
     void findStatementIncident(const clang::Stmt* stmt) {
 
         VarInFuncIncident* varInFuncIncident = dynamic_cast<VarInFuncIncident*>(this->incident);
@@ -1167,6 +1236,13 @@ public:
         int result = varInFuncIncident->hasIncidentExtend(stmt, incidentValues);
 
         if (result != -1) {
+
+            if (to_string(varInFuncCounter).compare(varInFuncCount) != 0) {
+                varInFuncCounter++;
+                return;
+            }
+            varInFuncCounter++;
+
             bool _if = result == 1;
             Context *context = context->getInstance();
             vector<vector<string>> initialConstraintsList = context->getInitialConstraintsList();
@@ -1317,25 +1393,28 @@ public:
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) {
         Context *context = context->getInstance();
         context->setContext(Result);
-        CFGHandler cfgHandler(nullptr);
-        if (!context->getConstraintsListSet()) {
-            context->setInitialConstraintsList(cfgHandler.readConstraintsList());
-            cfgHandler.clearConstraintsList();
-        }
 
-        if (incidentType.compare("VARINFUNC") == 0 || incidentType.compare("VARWRITE") == 0) {
+        if (incidentType.compare("VARINFUNC") == 0 || incidentType.compare("VARINFUNCEXTEND") == 0 || incidentType.compare("VARWRITE") == 0) {
+
+            CFGHandler cfgHandler(nullptr);
+            if (!context->getConstraintsListSet()) {
+                context->setInitialConstraintsList(cfgHandler.readConstraintsList());
+                cfgHandler.clearConstraintsList();
+            }
 
             SymbolTable *se = se->getInstance();
             se->setType("FUNCTION");
 
-            const auto* If = Result.Nodes.getNodeAs<clang::IfStmt>("if");
+            const auto *If = Result.Nodes.getNodeAs<clang::IfStmt>("if");
             clang::SourceLocation SL = If->getBeginLoc();
-            const clang::SourceManager* SM = Result.SourceManager;
+            const clang::SourceManager *SM = Result.SourceManager;
             if (SM->isInMainFile(SL)) {
-                // do the job
 //                cout << getStatementString(If) << endl;
                 CFGHandler cfgHandler(nullptr);
-                cfgHandler.findStatementIncident(If);
+                if (incidentType.compare("VARINFUNC") == 0)
+                    cfgHandler.findStatementIncident(If);
+                else if (incidentType.compare("VARINFUNCEXTEND") == 0)
+                    cfgHandler.findChildStatementIncident(If);
                 return;
             }
         } else {
@@ -1376,7 +1455,7 @@ public:
 class MyConsumer : public clang::ASTConsumer {
 public:
     explicit MyConsumer() : handler() {
-        if (incidentType.compare("VARINFUNC") == 0 || incidentType.compare("VARWRITE") == 0) {
+        if (incidentType.compare("VARINFUNC") == 0 || incidentType.compare("VARINFUNCEXTEND") == 0 || incidentType.compare("VARWRITE") == 0) {
             const auto matching_node = clang::ast_matchers::ifStmt().bind("if");
             match_finder.addMatcher(matching_node, &handler);
         } else {
@@ -1406,7 +1485,7 @@ public:
     }
 };
 
-int executeAction(int argc, const char **argv) {
+int executeAction(int argc, const char** argv) {
 
     auto CFGCategory = llvm::cl::OptionCategory("CFG");
     clang::tooling::CommonOptionsParser OptionsParser(argc, argv, CFGCategory);
@@ -1425,6 +1504,10 @@ int main(int argc, const char **argv) {
     incident = *(&argv[4]);
     incidentType = *(&argv[5]);
     root = *(&argv[6]);
+
+    if (argc == 8) {
+        varInFuncCount = *(&argv[7]);
+    }
 
     SymbolTable* se = se->getInstance();
     se->loadState();

@@ -56,6 +56,60 @@ public:
         return paramTypes;
     }
 
+    vector<vector<string>> readVarInFuncParameters() {
+        ifstream infile(this->folder + this->functionParametersFile);
+        string line;
+        vector<vector<string>> parametersList;
+        vector<string> parameters;
+
+        while (getline(infile, line)) {
+            cout << line << endl;
+            if (line.compare("---------------") == 0) {
+                parametersList.push_back(parameters);
+                parameters.clear();
+            } else {
+                parameters.push_back(line);
+            }
+        }
+        return parametersList;
+    }
+
+    vector<vector<string>> readVarInFuncParameterTypes() {
+        ifstream infile(this->folder + this->functionParameterTypesFile);
+        string line;
+        vector<vector<string>> parameterTypesList;
+        vector<string> parameterTypes;
+
+        while (getline(infile, line)) {
+            cout << line << endl;
+            if (line.compare("---------------") == 0) {
+                parameterTypesList.push_back(parameterTypes);
+                parameterTypes.clear();
+            } else {
+                parameterTypes.push_back(line);
+            }
+        }
+        return parameterTypesList;
+    }
+
+    vector<vector<string>> readFunctionConstraints() {
+        ifstream infile(this->constraintFile);
+        string line;
+        vector<vector<string>> constraintsList;
+        vector<string> constraints;
+
+        while (getline(infile, line)) {
+            cout << line << endl;
+            if (line.compare("---------------") == 0) {
+                constraintsList.push_back(constraints);
+                constraints.clear();
+            } else {
+                constraints.push_back(line);
+            }
+        }
+        return constraintsList;
+    }
+
     void writeFunctionParameters(vector<string> params) {
 
         string fileName = this->folder + this->functionParametersFile;
@@ -67,6 +121,18 @@ public:
         string fileName = this->folder + this->functionParameterTypesFile;
         ofstream file (fileName, ofstream::out | ofstream::trunc);
         return this->writeConstraints(paramTypes, file);
+    }
+
+    void writeMainConstraints(vector<vector<string>>& constraints) {
+        ofstream file (this->constraintFile, ofstream::out | ofstream::trunc);
+        if (file.is_open()) {
+            for (vector<string> constraint : constraints) {
+                for (string s: constraint)
+                    file << s << endl;
+                file << "---------------\n";
+            }
+        }
+        file.close();
     }
 
 protected:
@@ -95,6 +161,18 @@ public:
         this->command = command;
     }
 
+    int getSubCommandsSize() {
+        return this->subCommands.size();
+    }
+
+    vector<Command> getSubCommands() {
+        return this->subCommands;
+    }
+
+    void addSubCommand(Command command) {
+        this->subCommands.push_back(command);
+    }
+
     void setParams(vector<string> params) {
         this->params = params;
     }
@@ -114,8 +192,14 @@ public:
         for (string pt: this->paramTypes)
             cout << pt << endl;
         cout << "-----------------\n";
+        if (subCommands.size()) {
+            cout << "Sub Commands:\n";
+            for (Command c : subCommands)
+                c.print();
+        }
     }
 
+    vector<Command> subCommands;
     vector<string> params;
     vector<string> paramTypes;
     string command;
@@ -141,29 +225,41 @@ vector<string> parseCommand(string str) {
     return commands;
 }
 
+
+FileSystem fs = FileSystem();
+
+void runCommand(Command& command, string fileName, string isRoot, int clCount) {
+
+    fs.clearFile("params");
+    fs.clearFile("paramTypes");
+
+    if (command.params.size()) {
+        fs.writeFunctionParameters(command.params);
+        fs.writeFunctionParametersType(command.paramTypes);
+    }
+
+    string run = "./cfg " + fileName + " -- " + command.functionName + " " + command.incident + " " + command.command + " " + isRoot + " " + to_string(clCount);
+    cout << run << endl;
+    system(run.c_str());
+}
+
 int main(int argc, const char **argv) {
-//  system("./cfg test.cpp -- foo bar CALL");
-//  system("./cfg test.cpp -- bar c WRITE");
 
-    FileSystem fs = FileSystem();
+    string fileName = "tests/multiple/test.cpp";
+    string command = "foo CALL bar WRITE c VARINFUNC isTrue WRITE c";
 
-//    string fileName = "tests/single/test.cpp";
-//    string command = "foo CALL bar WRITE r";
-
-// shuttle_manager::ShuttleManagerNodelet::ShuttleConfirmationCb
-// WRITE shuttle_manager::ShuttleManagerNodelet::current_state
-
-    string fileName = "autonomoose_core/shuttle_manager/src/shuttle_manager_nodelet.cpp";
-    string command = "ShuttleConfirmationCb WRITE current_state";
+//    string fileName = "autonomoose_core/shuttle_manager/src/shuttle_manager_nodelet.cpp";
+//    string command = "ShuttleConfirmationCb WRITE current_state";
 
 //    string fileName = "autonomoose_core/route_publisher/src/route_publisher_nodelet.cpp";
 //    string command = "vehicleStateCb CALL updatePath CALL updateLocalization WRITE previous_route_plan";
 
     vector<string> commands = parseCommand(command);
-    vector<Command> commandList;
 
-//    for (string c : commands)
-//        cout << c << endl;
+    vector<vector<Command>> commandLists;
+    vector<Command> cl;
+
+    commandLists.push_back(cl);
 
     // Pass 1: Fill metadata
 
@@ -174,46 +270,98 @@ int main(int argc, const char **argv) {
         string functionName = commands[i];
         string command = commands[i + 1];
         string incident = commands[i + 2];
-        if (command.compare("CALL") == 0) {
-            call = true;
-            string run = "./cfg " + fileName + " -- " + functionName + " " + incident + " FUNCTION 0";
-            system(run.c_str());
-            commandList.push_back(Command(functionName, incident, command));
-        } else if (call) {
+
+        Command c = Command(functionName, incident, command);
+
+        if (call) {
             call = false;
             vector <string> params = fs.readFunctionParameters();
             vector <string> paramTypes = fs.readFunctionParameterTypes();
-            Command c = Command(functionName, incident, command);
             c.setParams(params);
             c.setParamTypes(paramTypes);
-            commandList.push_back(c);
-        } else {
-            Command c = Command(functionName, incident, command);
-            commandList.push_back(c);
+        }
+
+        if (command.compare("CALL") == 0) {
+            call = true;
+            string run = "./cfg " + fileName + " -- " + functionName + " " + incident + " FUNCTION 0";
+            cout << "Executing: " << run << endl;
+            system(run.c_str());
+        } else if (command.compare("VARINFUNC") == 0) {
+
+            for (int i = 0; i < commandLists.size(); i++) {
+                commandLists[i].push_back(c);
+            }
+
+            string run = "./cfg " + fileName + " -- " + functionName + " " + incident + " VARINFUNCEXTEND 0";
+            cout << "Executing: " << run << endl;
+            system(run.c_str());
+
+            string nextFunctionName = commands[i + 2];
+            string nextCommand = commands[i + 3];
+            string nextIncident = commands[i + 4];
+
+            vector <vector<string>> varInFuncParameters = fs.readVarInFuncParameters();
+            vector <vector<string>> varInFuncParameterTypes = fs.readVarInFuncParameterTypes();
+
+            vector<vector<Command>> newCommandLists;
+
+            for (int i = 0; i < varInFuncParameters.size(); ++i) {
+
+                vector<vector<Command>> copyCommandLists = commandLists;
+
+                Command subCommand(nextFunctionName, nextIncident, nextCommand);
+                subCommand.setParams(varInFuncParameters[i]);
+                subCommand.setParamTypes(varInFuncParameterTypes[i]);
+
+                for (int i = 0; i < copyCommandLists.size(); i++) {
+                    copyCommandLists[i].push_back(subCommand);
+                }
+
+                newCommandLists.insert(newCommandLists.end(), copyCommandLists.begin(), copyCommandLists.end());
+            }
+            commandLists = newCommandLists;
+            i = i + 2;
+            continue;
+        }
+
+        for (int i = 0; i < commandLists.size(); i++) {
+            commandLists[i].push_back(c);
         }
     }
-    for (Command c: commandList) {
-        c.print();
+
+    for (vector<Command> cl: commandLists) {
+        cout << "----------COMMAND LIST----------\n";
+        for (Command c : cl)
+            c.print();
     }
     // Pass 2: Traverse and run the commands
     cout << "Starting pass 2:\n";
-    fs.clearFile("symbols");
-    fs.clearFile("constraints");
-    for (vector<Command>::reverse_iterator it = commandList.rbegin(); it != commandList.rend(); ++it) {
-        Command currentCommand = (*it);
-        fs.clearFile("params");
-        fs.clearFile("paramTypes");
-        if (currentCommand.params.size()) {
-            fs.writeFunctionParameters(currentCommand.params);
-            fs.writeFunctionParametersType(currentCommand.paramTypes);
+
+    vector<vector<string>> constraintList;
+    int i = 0;
+    for (vector<Command> commandList: commandLists) {
+        cout << "Running command list: " << i << endl;
+
+        fs.clearFile("symbols");
+        fs.clearFile("constraints");
+
+        for (vector<Command>::reverse_iterator it = commandList.rbegin(); it != commandList.rend(); ++it) {
+
+            Command currentCommand = (*it);
+
+            string isRoot = "";
+
+            if (it != --commandList.rend())
+                isRoot += "0";
+            else
+                isRoot += "1";
+
+            runCommand(currentCommand, fileName, isRoot, i);
         }
-        string run = "./cfg " + fileName + " -- " + currentCommand.functionName + " " + currentCommand.incident + " " + currentCommand.command;
-        if (it != --commandList.rend())
-            run += " 0";
-        else
-            run += " 1";
-        cout << run << endl;
-        system(run.c_str());
+        vector<vector<string>> newConstraintList = fs.readFunctionConstraints();
+        constraintList.insert(constraintList.begin(), newConstraintList.begin(), newConstraintList.end());
+        i++;
     }
+    fs.writeMainConstraints(constraintList);
 }
 
