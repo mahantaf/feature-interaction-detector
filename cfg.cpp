@@ -716,7 +716,7 @@ private:
 
 class VarInFuncIncident: public Incident {
 public:
-    VarInFuncIncident(string incident) : Incident(incident, "VARINFUNC") {}
+    VarInFuncIncident(string incident) : Incident(incident, "VARINFFUNC") {}
 
     vector<string> getParams() {
         return this->params;
@@ -840,7 +840,7 @@ Incident* createIncident() {
     if (incidentType.compare("FUNCTION") == 0) {
         return new FunctionIncident(incident);
     }
-    if (incidentType.compare("VARINFUNC") == 0 || incidentType.compare("VARINFUNCEXTEND") == 0) {
+    if (incidentType.compare("VARINFFUNC") == 0 || incidentType.compare("VARINFUNCEXTEND") == 0) {
         return new VarInFuncIncident(incident);
     }
     return nullptr;
@@ -1285,7 +1285,7 @@ public:
         }
         vector<vector<string>> constraintsList = this->cfgBlockHandler.getBlockCondition(startBlock, constraints);
         SymbolTable *st = st->getInstance();
-        map<string, pair<set<string>, string>>tableCopy = st->getTable();
+        map<string, pair<set<string>, string>> tableCopy = st->getTable();
         for (clang::CFGBlock::const_pred_iterator I = startBlock->pred_begin(), E = startBlock->pred_end(); I != E; I++) {
             for (vector<string> c: constraintsList) {
                 vector<string> constraintsCopy = c;
@@ -1322,9 +1322,8 @@ public:
             SymbolTable *st = st->getInstance();
             map<string, pair<set<string>, string>>tableCopy = st->getTable();
             for (vector<string> initialConstraints : initialConstraintsList) {
-                st->setTable(tableCopy);
                 for (vector<const clang::CFGBlock*>::iterator blk = this->incidentBlocks.begin(); blk != this->incidentBlocks.end(); ++blk) {
-
+                    st->setTable(tableCopy);
                     cout << "Incident Block: " << (*blk)->getBlockID() << endl;
 
                     this->paths.clear();
@@ -1335,9 +1334,10 @@ public:
                 }
             }
         } else {
-            for (vector<const clang::CFGBlock *>::iterator blk = this->incidentBlocks.begin();
-                 blk != this->incidentBlocks.end(); ++blk) {
-
+            SymbolTable *st = st->getInstance();
+            map<string, pair<set<string>, string>>tableCopy = st->getTable();
+            for (vector<const clang::CFGBlock *>::iterator blk = this->incidentBlocks.begin(); blk != this->incidentBlocks.end(); ++blk) {
+                st->setTable(tableCopy);
                 cout << "Incident Block: " << (*blk)->getBlockID() << endl;
 
                 this->paths.clear();
@@ -1394,7 +1394,7 @@ public:
         Context *context = context->getInstance();
         context->setContext(Result);
 
-        if (incidentType.compare("VARINFUNC") == 0 || incidentType.compare("VARINFUNCEXTEND") == 0 || incidentType.compare("VARWRITE") == 0) {
+        if (incidentType.compare("VARINFFUNC") == 0 || incidentType.compare("VARINFUNCEXTEND") == 0 || incidentType.compare("VARWRITE") == 0) {
 
             CFGHandler cfgHandler(nullptr);
             if (!context->getConstraintsListSet()) {
@@ -1411,7 +1411,7 @@ public:
             if (SM->isInMainFile(SL)) {
 //                cout << getStatementString(If) << endl;
                 CFGHandler cfgHandler(nullptr);
-                if (incidentType.compare("VARINFUNC") == 0)
+                if (incidentType.compare("VARINFFUNC") == 0)
                     cfgHandler.findStatementIncident(If);
                 else if (incidentType.compare("VARINFUNCEXTEND") == 0)
                     cfgHandler.findChildStatementIncident(If);
@@ -1455,7 +1455,7 @@ public:
 class MyConsumer : public clang::ASTConsumer {
 public:
     explicit MyConsumer() : handler() {
-        if (incidentType.compare("VARINFUNC") == 0 || incidentType.compare("VARINFUNCEXTEND") == 0 || incidentType.compare("VARWRITE") == 0) {
+        if (incidentType.compare("VARINFFUNC") == 0 || incidentType.compare("VARINFUNCEXTEND") == 0 || incidentType.compare("VARWRITE") == 0) {
             const auto matching_node = clang::ast_matchers::ifStmt().bind("if");
             match_finder.addMatcher(matching_node, &handler);
         } else {

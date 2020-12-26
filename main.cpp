@@ -245,11 +245,11 @@ void runCommand(Command& command, string fileName, string isRoot, int clCount) {
 
 int main(int argc, const char **argv) {
 
-    string fileName = "tests/multiple/test.cpp";
-    string command = "foo CALL bar WRITE c VARINFUNC isTrue WRITE c";
+//    string fileName = "tests/multiple/test.cpp";
+//    string command = "foo CALL bar WRITE c VARINFUNC isTrue WRITE c";
 
-//    string fileName = "autonomoose_core/shuttle_manager/src/shuttle_manager_nodelet.cpp";
-//    string command = "ShuttleConfirmationCb WRITE current_state";
+    string fileName = "autonomoose_core/shuttle_manager/src/shuttle_manager_nodelet.cpp";
+    string command = "ShuttleConfirmationCb WRITE current_state VARINFFUNC processNextShuttleRequest WRITE current_state";
 
 //    string fileName = "autonomoose_core/route_publisher/src/route_publisher_nodelet.cpp";
 //    string command = "vehicleStateCb CALL updatePath CALL updateLocalization WRITE previous_route_plan";
