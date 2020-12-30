@@ -848,13 +848,20 @@ Incident* createIncident() {
 
 void getStmtOperands(const clang::Stmt* stmt, set<pair<string, string>>& operands, string type) {
     const string stmtClass(stmt->getStmtClassName());
-    if (stmtClass.compare("BinaryOperator") == 0) {
+    if (stmtClass.compare("BinaryOperator") == 0 || stmtClass.compare("CompoundAssignOperator") == 0) {
 
         const clang::BinaryOperator *binaryOperator = cast<clang::BinaryOperator>(stmt);
         const clang::Stmt *lhs = binaryOperator->getLHS();
         const clang::Stmt *rhs = binaryOperator->getRHS();
 
-        if (binaryOperator->isAssignmentOp()) {
+        if (binaryOperator->isCompoundAssignmentOp()) {
+            getStmtOperands(lhs, operands, "LVALUE");
+            if (operands.size()) {
+                getStmtOperands(lhs, operands, "RVALUE");
+                getStmtOperands(rhs, operands, "RVALUE");
+            }
+
+        } else if (binaryOperator->isAssignmentOp()) {
             Incident* incident = createIncident();
             vector<string> temp;
             if (incident->getType().compare("WRITE") == 0 && incident->hasIncident(stmt, temp)) {
@@ -868,6 +875,10 @@ void getStmtOperands(const clang::Stmt* stmt, set<pair<string, string>>& operand
             getStmtOperands(lhs, operands, type);
             getStmtOperands(rhs, operands, type);
         }
+    }
+    else if (stmtClass.compare("UnaryOperator") == 0) {
+        const clang::Stmt *subExpr = cast<clang::UnaryOperator>(stmt)->getSubExpr();
+        getStmtOperands(subExpr, operands, type);
     }
     else if (stmtClass.compare("ImplicitCastExpr") == 0 || stmtClass.compare("DeclRefExpr") == 0 || stmtClass.compare("MemberExpr") == 0) {
         if (type.compare("")) {
@@ -924,31 +935,39 @@ void getStmtOperands(const clang::Stmt* stmt, set<pair<string, string>>& operand
 }
 
 bool hasFunctionCall(const clang::Stmt* stmt, string stmtClass, vector<string>& names, vector<vector<string>>& paramNames, vector<vector<string>>& paramTypes) {
-  if (stmtClass.compare("BinaryOperator") == 0) {
-    const clang::BinaryOperator *binaryOperator = cast<clang::BinaryOperator>(stmt);
-    const clang::Stmt *lhs = binaryOperator->getLHS();
-    const clang::Stmt *rhs = binaryOperator->getRHS();
-    return hasFunctionCall(lhs, lhs->getStmtClassName(), names, paramNames, paramTypes) ||
-           hasFunctionCall(rhs, rhs->getStmtClassName(), names, paramNames, paramTypes);
-  } else if (stmtClass.compare("CallExpr") == 0 || stmtClass.compare("CXXMemberCallExpr") == 0) {
+    if (stmtClass.compare("BinaryOperator") == 0 || stmtClass.compare("CompoundAssignOperator") == 0) {
+        const clang::BinaryOperator *binaryOperator = cast<clang::BinaryOperator>(stmt);
+        const clang::Stmt *lhs = binaryOperator->getLHS();
+        const clang::Stmt *rhs = binaryOperator->getRHS();
+        return hasFunctionCall(lhs, lhs->getStmtClassName(), names, paramNames, paramTypes) ||
+               hasFunctionCall(rhs, rhs->getStmtClassName(), names, paramNames, paramTypes);
+    } else if (stmtClass.compare("ImplicitCastExpr") == 0) {
 
-    const clang::CallExpr *callExpr = cast<clang::CallExpr>(stmt);
+        const clang::Stmt *subExpr = cast<clang::ImplicitCastExpr>(stmt)->getSubExpr();
+        return hasFunctionCall(subExpr, subExpr->getStmtClassName(), names, paramNames, paramTypes);
 
-    const clang::Stmt *callee = callExpr->getCallee();
-    const clang::Expr *const *args = callExpr->getArgs();
+    } else if (stmtClass.compare("CallExpr") == 0 || stmtClass.compare("CXXMemberCallExpr") == 0) {
 
-    vector <string> params;
-    vector <string> paramType;
-    for (unsigned int i = 0; i < callExpr->getNumArgs(); ++i) {
-      params.push_back(getStatementString(args[i]));
-      paramType.push_back(args[i]->getStmtClassName());
+        const clang::CallExpr *callExpr = cast<clang::CallExpr>(stmt);
+
+        const clang::Stmt *callee = callExpr->getCallee();
+        const clang::Expr *const *args = callExpr->getArgs();
+        const clang::FunctionDecl *functionDecl = callExpr->getDirectCallee();
+
+        if (functionDecl) {
+            vector <string> params;
+            vector <string> paramType;
+            for (unsigned int i = 0; i < callExpr->getNumArgs(); ++i) {
+                params.push_back(getStatementString(args[i]));
+                paramType.push_back(args[i]->getStmtClassName());
+            }
+            paramNames.push_back(params);
+            paramTypes.push_back(paramType);
+            names.push_back(functionDecl->getNameInfo().getAsString());
+            return true;
+        }
     }
-    paramNames.push_back(params);
-    paramTypes.push_back(paramType);
-    names.push_back(getStatementString(callee));
-    return true;
-  }
-  return false;
+    return false;
 }
 
 class Path {
@@ -995,6 +1014,26 @@ public:
         return regex_replace(statement, e, returnValue);
     }
 
+    void replaceCompoundAssignment(string& statement) {
+        string lhs = "";
+        string rhs = "";
+        string op = "";
+        bool seen = false;
+
+        for (auto x : statement) {
+            if (seen) {
+                rhs += x;
+            } else if (x == '+' || x == '-' || x == '*' || x == '/') {
+                op += x;
+            } else if (x == '=') {
+                seen = true;
+            } else {
+                lhs += x;
+            }
+        }
+        statement = lhs + "= " + lhs + op + rhs;
+    }
+
     void replaceStaticSingleAssignment(
             string& statement,
             set<pair<string, string>>& operands,
@@ -1017,6 +1056,9 @@ public:
         if (statementClass.compare("ReturnStmt") == 0)
             this->replaceReturnStatement(statement);
 
+        if (statementClass.compare("CompoundAssignOperator") == 0)
+            this->replaceCompoundAssignment(statement);
+
         if (operands.size()) {
             set<pair<string, string>> duplicate = findPairsWithSameFirst(operands);
             if (duplicate.size())
@@ -1034,6 +1076,9 @@ public:
 
         if (statementClass.compare("DeclStmt") == 0)
             this->replaceDeclaration(statement);
+
+        if (statementClass.compare("CompoundAssignOperator") == 0)
+            this->replaceCompoundAssignment(statement);
 
         string replacedStatement = this->replaceFunctionCallByReturnValue(statement, functionName, returnValue);
 
@@ -1075,7 +1120,7 @@ public:
 
                 string statement = getStatementString(stmt);
 
-                cout << statement << endl;
+//                cout << statement << endl;
 
                 vector<string> funcNames;
                 vector<vector<string>> paramNames;
@@ -1084,7 +1129,7 @@ public:
                 if (stmtClass.compare("CallExpr") && stmtClass.compare("CXXMemberCallExpr") && hasFunctionCall(stmt, stmtClass, funcNames, paramNames, paramTypes)) {
                     int i = 0;
                     for (string name: funcNames) {
-
+                        cout << "Function name: " << name << endl;
                         SymbolTable* se = se->getInstance();
                         se->saveState();
                         se->saveParameters(name, paramNames[i]);

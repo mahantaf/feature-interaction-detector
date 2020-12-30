@@ -63,7 +63,7 @@ public:
         vector<string> parameters;
 
         while (getline(infile, line)) {
-            cout << line << endl;
+//            cout << line << endl;
             if (line.compare("---------------") == 0) {
                 parametersList.push_back(parameters);
                 parameters.clear();
@@ -248,11 +248,12 @@ int main(int argc, const char **argv) {
 //    string fileName = "tests/multiple/test.cpp";
 //    string command = "foo CALL bar WRITE c VARINFUNC isTrue WRITE c";
 
-    string fileName = "autonomoose_core/shuttle_manager/src/shuttle_manager_nodelet.cpp";
-    string command = "ShuttleConfirmationCb WRITE current_state VARINFFUNC processNextShuttleRequest WRITE current_state";
 
-//    string fileName = "autonomoose_core/route_publisher/src/route_publisher_nodelet.cpp";
-//    string command = "vehicleStateCb CALL updatePath CALL updateLocalization WRITE previous_route_plan";
+//    string fileName = "autonomoose_core/shuttle_manager/src/shuttle_manager_nodelet.cpp";
+//    string command = "ShuttleConfirmationCb WRITE current_state VARINFFUNC processNextShuttleRequest WRITE current_state";
+
+    string fileName = "autonomoose_core/route_publisher/src/route_publisher_nodelet.cpp";
+    string command = "refGPSCb WRITE ref_gps_flag_ VARINFFUNC updatePath CALL fillPathsFromRoutePlan WRITE route_plan";
 
     vector<string> commands = parseCommand(command);
 
@@ -286,7 +287,7 @@ int main(int argc, const char **argv) {
             string run = "./cfg " + fileName + " -- " + functionName + " " + incident + " FUNCTION 0";
             cout << "Executing: " << run << endl;
             system(run.c_str());
-        } else if (command.compare("VARINFUNC") == 0) {
+        } else if (command.compare("VARINFFUNC") == 0) {
 
             for (int i = 0; i < commandLists.size(); i++) {
                 commandLists[i].push_back(c);
