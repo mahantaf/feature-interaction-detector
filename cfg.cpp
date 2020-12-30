@@ -976,6 +976,17 @@ public:
         this->constraints = constraints;
     }
 
+    bool compare(Path path) {
+        vector<string> pathConstraints = path.getConstraints();
+        if (pathConstraints.size() != this->constraints.size())
+            return false;
+
+        for (int i = 0; i < this->constraints.size(); i++)
+            if (this->constraints[i].compare(pathConstraints[i]) != 0)
+                return false;
+        return true;
+    }
+
     vector<string> getConstraints() {
         return this->constraints;
     }
@@ -1104,7 +1115,18 @@ public:
         }
         return false;
     }
-
+    bool hasReturnStmt(const clang::CFGBlock* block) {
+        for (clang::CFGBlock::const_reverse_iterator I = block->rbegin(), E = block->rend(); I != E; ++I) {
+            clang::CFGElement El = *I;
+            if (auto SE = El.getAs<clang::CFGStmt>()) {
+                const clang::Stmt *stmt = SE->getStmt();
+                string stmtClass(stmt->getStmtClassName());
+                if (stmtClass.compare("ReturnStmt") == 0)
+                    return true;
+            }
+        }
+        return false;
+    }
     vector<vector<string>> getBlockCondition(const clang::CFGBlock* block, vector<string>& constraints) {
 
         this->initializeConstraints(constraints);
@@ -1318,13 +1340,14 @@ public:
         }
     }
 
-    void bottomUpTraverse(const clang::CFGBlock* startBlock, unsigned int previousBlockId, vector<string>& constraints) {
+    void bottomUpTraverse(const clang::CFGBlock* startBlock, unsigned int previousBlockId, vector<string>& constraints, bool previousCollect) {
         cout << "Visiting Block " << startBlock->getBlockID() << endl;
         if (startBlock->getBlockID() == this->getEntryBlockId()) {
             return this->paths.push_back(Path(constraints));
         }
-        if (previousBlockId != 0) {
-            const string terminatorCondition = this->cfgBlockHandler.getTerminatorCondition(startBlock, previousBlockId);
+        string terminatorCondition;
+        if (previousBlockId != 0 && previousCollect) {
+            terminatorCondition = this->cfgBlockHandler.getTerminatorCondition(startBlock, previousBlockId);
             if (terminatorCondition.compare(""))
                 constraints.push_back(terminatorCondition);
         }
@@ -1332,10 +1355,11 @@ public:
         SymbolTable *st = st->getInstance();
         map<string, pair<set<string>, string>> tableCopy = st->getTable();
         for (clang::CFGBlock::const_pred_iterator I = startBlock->pred_begin(), E = startBlock->pred_end(); I != E; I++) {
+            bool collect = (!(constraintsList.size() == 1 && constraintsList[0].size() == constraints.size()));
             for (vector<string> c: constraintsList) {
                 vector<string> constraintsCopy = c;
                 st->setTable(tableCopy);
-                this->bottomUpTraverse((*I).getReachableBlock(), startBlock->getBlockID(), constraintsCopy);
+                this->bottomUpTraverse((*I).getReachableBlock(), startBlock->getBlockID(), constraintsCopy, collect);
             }
         }
     }
@@ -1374,7 +1398,7 @@ public:
                     this->paths.clear();
                     vector <string> pathConstraints = initialConstraints;
 
-                    this->bottomUpTraverse((*blk), 0, pathConstraints);
+                    this->bottomUpTraverse((*blk), 0, pathConstraints, false);
                     this->writePaths();
                 }
             }
@@ -1388,7 +1412,7 @@ public:
                 this->paths.clear();
                 vector <string> pathConstraints;
 
-                this->bottomUpTraverse((*blk), 0, pathConstraints);
+                this->bottomUpTraverse((*blk), 0, pathConstraints, false);
                 this->writePaths();
             }
         }
@@ -1396,6 +1420,7 @@ public:
 
     void writePaths() {
         cout << "Constrains:" << endl;
+        this->removeDuplicatePaths();
         for (Path path: this->paths) {
             vector<string> constraints = path.getConstraints();
             if (incidentType.compare("RETURN"))
@@ -1419,6 +1444,17 @@ public:
 
     vector<string> getReturnValues() {
         return this->returnValues;
+    }
+
+    void removeDuplicatePaths() {
+        for (int i = 0; i < this->paths.size(); i++) {
+            for (int j = i + 1; j < this->paths.size() - 1; j++) {
+                if (this->paths[i].compare(this->paths[j])) {
+                    this->paths.erase(this->paths.begin() + j);
+                    j--;
+                }
+            }
+        }
     }
 
 private:
