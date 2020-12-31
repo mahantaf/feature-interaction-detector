@@ -848,6 +848,7 @@ Incident* createIncident() {
 
 void getStmtOperands(const clang::Stmt* stmt, set<pair<string, string>>& operands, string type) {
     const string stmtClass(stmt->getStmtClassName());
+    cout << "Stmt: " << getStatementString(stmt) << " " << "Class: " << stmtClass << endl;
     if (stmtClass.compare("BinaryOperator") == 0 || stmtClass.compare("CompoundAssignOperator") == 0) {
 
         const clang::BinaryOperator *binaryOperator = cast<clang::BinaryOperator>(stmt);
@@ -898,6 +899,7 @@ void getStmtOperands(const clang::Stmt* stmt, set<pair<string, string>>& operand
             string var = getStatementString(stmt);
             SymbolTable *st = st->getInstance();
             string varSymbol = st->addVariableSymbol(var, type);
+            cout << "VAR: " << var << " TYPE: " << type << " VAR SYMBOL: " << varSymbol << endl;
             if (varSymbol.compare("")) {
                 pair <string, string> op(var, varSymbol);
                 operands.insert(op);
@@ -924,7 +926,8 @@ void getStmtOperands(const clang::Stmt* stmt, set<pair<string, string>>& operand
                     pair <string, string> op(var, varSymbol);
                     operands.insert(op);
                 }
-                getStmtOperands(rhs, operands, "RVALUE");
+                if (operands.size())
+                    getStmtOperands(rhs, operands, "RVALUE");
             }
         }
     }
