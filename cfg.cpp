@@ -924,13 +924,22 @@ void getStmtOperands(const clang::Stmt* stmt, set<pair<string, string>>& operand
                     pair <string, string> op(var, varSymbol);
                     operands.insert(op);
                 }
-                getStmtOperands(rhs, operands, "RVALUE");
+                if (operands.size())
+                    getStmtOperands(rhs, operands, "RVALUE");
             }
         }
     }
     else if (stmtClass.compare("ReturnStmt") == 0) {
         const clang::Stmt* returnValue = cast<clang::ReturnStmt>(stmt)->getRetValue();
-        getStmtOperands(returnValue, operands, "RVALUE");
+        if (returnValue) {
+            string returnValueClass(returnValue->getStmtClassName());
+            if (returnValueClass.find("Literal") != string::npos) {
+                pair <string, string> op(getStatementString(returnValue), getStatementString(returnValue));
+                operands.insert(op);
+            } else {
+                getStmtOperands(returnValue, operands, "RVALUE");
+            }
+        }
     }
 }
 
@@ -1105,7 +1114,7 @@ public:
         this->transpiler = Transpiler();
     }
 
-    bool isInIf(const clang::CFGBlock* block, unsigned int previousBlockId) {
+    bool isInIf(const clang::CFGBlock *block, unsigned int previousBlockId) {
         int i = 0;
         for (clang::CFGBlock::const_succ_iterator I = block->succ_begin(), E = block->succ_end(); I != E; I++) {
             if (((*I).getReachableBlock()->getBlockID() == previousBlockId) && i == 0)
@@ -1115,35 +1124,50 @@ public:
         }
         return false;
     }
-    bool hasReturnStmt(const clang::CFGBlock* block) {
-        for (clang::CFGBlock::const_reverse_iterator I = block->rbegin(), E = block->rend(); I != E; ++I) {
-            clang::CFGElement El = *I;
-            if (auto SE = El.getAs<clang::CFGStmt>()) {
-                const clang::Stmt *stmt = SE->getStmt();
-                string stmtClass(stmt->getStmtClassName());
-                if (stmtClass.compare("ReturnStmt") == 0)
-                    return true;
-            }
+
+    bool hasReturn(const clang::Stmt *stmt) {
+        for (clang::ConstStmtIterator it = stmt->child_begin(); it != stmt->child_end(); it++) {
+            const clang::Stmt *child = (*it);
+            string stmtClass(child->getStmtClassName());
+            if (stmtClass.compare("ReturnStmt") == 0)
+                return true;
         }
+        string stmtClass(stmt->getStmtClassName());
+        if (stmtClass.compare("ReturnStmt") == 0)
+            return true;
         return false;
     }
+
+    int hasReturnStmt(const clang::IfStmt *ifStmt) {
+        const clang::Stmt *thenStatement = ifStmt->getThen();
+        const clang::Stmt *elseStatement = ifStmt->getElse();
+
+        if (thenStatement && this->hasReturn(thenStatement))
+            return 1;
+        if (elseStatement && this->hasReturn(elseStatement))
+            return 0;
+        return -1;
+    }
+
+    bool hasElse(const clang::IfStmt *ifStmt) {
+        const clang::Stmt *elseStatement = ifStmt->getElse();
+        if (elseStatement)
+            return true;
+        return false;
+    }
+
     vector<vector<string>> getBlockCondition(const clang::CFGBlock* block, vector<string>& constraints) {
-
         this->initializeConstraints(constraints);
-
         for (clang::CFGBlock::const_reverse_iterator I = block->rbegin(), E = block->rend(); I != E ; ++I) {
             clang::CFGElement El = *I;
             if (auto SE = El.getAs<clang::CFGStmt>()) {
                 const clang::Stmt *stmt = SE->getStmt();
                 string stmtClass(stmt->getStmtClassName());
-
                 set<pair<string, string>> operands;
                 getStmtOperands(stmt, operands, "");
 
                 string statement = getStatementString(stmt);
-
 //                cout << statement << endl;
-
                 vector<string> funcNames;
                 vector<vector<string>> paramNames;
                 vector<vector<string>> paramTypes;
@@ -1200,31 +1224,32 @@ public:
         return _if ? (stmt) : ("!(" + stmt + ")");
     }
 
-    const string getTerminatorCondition(const clang::CFGBlock* block, unsigned int previousBlockId) {
+    const string getTerminatorCondition(const clang::CFGBlock* block, unsigned int previousBlockId, bool collect) {
         const clang::Stmt *terminatorStmt = block->getTerminatorStmt();
         if (terminatorStmt && terminatorStmt->getStmtClass() == clang::Stmt::IfStmtClass) {
+            const clang::IfStmt *ifStmt = cast<clang::IfStmt>(terminatorStmt);
+            int hasReturn = this->hasReturnStmt(ifStmt);
+            if (hasReturn != -1 || collect) {
+                if (!(hasReturn != -1) && !isInIf(block, previousBlockId) && !hasElse(ifStmt))
+                    return "";
+                set<pair<string, string>> operands;
+                getStmtOperands(block->getTerminatorCondition(), operands, "COND");
 
-            set<pair<string, string>> operands;
-            const clang::Stmt* tc = block->getTerminatorCondition(true);
-            string className = tc->getStmtClassName();
-//            if (className.compare("OpaqueValueExpr") == 0) {
-//                const clang::OpaqueValueExpr *opaqueValueExpr = cast<clang::OpaqueValueExpr>(tc);
-//                cout << "OPAQUE VALUE: " << endl;
-//                opaqueValueExpr->dump();
-//                cout << "SOURCE VALUE: " << endl;
-//                opaqueValueExpr->getSourceExpr()->dump();
-//
-//            }
-            getStmtOperands(block->getTerminatorCondition(), operands, "COND");
-
-            string stmt;
-            if (this->isInIf(block, previousBlockId))
-                stmt = getStatementString(block->getTerminatorCondition());
-            else
-                stmt = "!(" + getStatementString(block->getTerminatorCondition()) + ")";
-
-            this->transpiler.replaceVariables(stmt, operands);
-            return stmt;
+                string stmt;
+                if (collect) {
+                    if (this->isInIf(block, previousBlockId))
+                        stmt = getStatementString(block->getTerminatorCondition());
+                    else
+                        stmt = "!(" + getStatementString(block->getTerminatorCondition()) + ")";
+                } else {
+                    if (hasReturn == 0)
+                        stmt = getStatementString(block->getTerminatorCondition());
+                    else
+                        stmt = "!(" + getStatementString(block->getTerminatorCondition()) + ")";
+                }
+                this->transpiler.replaceVariables(stmt, operands);
+                return stmt;
+            }
         }
         return "";
     }
@@ -1345,17 +1370,24 @@ public:
         if (startBlock->getBlockID() == this->getEntryBlockId()) {
             return this->paths.push_back(Path(constraints));
         }
-        string terminatorCondition;
-        if (previousBlockId != 0 && previousCollect) {
-            terminatorCondition = this->cfgBlockHandler.getTerminatorCondition(startBlock, previousBlockId);
+        string terminatorCondition = "";
+        if (previousBlockId != 0) {
+            terminatorCondition = this->cfgBlockHandler.getTerminatorCondition(startBlock, previousBlockId, previousCollect);
             if (terminatorCondition.compare(""))
                 constraints.push_back(terminatorCondition);
         }
         vector<vector<string>> constraintsList = this->cfgBlockHandler.getBlockCondition(startBlock, constraints);
+        for (int i = 0; i < constraintsList.size(); i++) {
+            cout << i << ". ";
+            for (string s: constraintsList[i]) {
+                cout << s << ' ';
+            }
+            cout << endl;
+        }
         SymbolTable *st = st->getInstance();
         map<string, pair<set<string>, string>> tableCopy = st->getTable();
         for (clang::CFGBlock::const_pred_iterator I = startBlock->pred_begin(), E = startBlock->pred_end(); I != E; I++) {
-            bool collect = (!(constraintsList.size() == 1 && constraintsList[0].size() == constraints.size()));
+            bool collect = (previousBlockId == 0) || (terminatorCondition.compare("") != 0) || (!(constraintsList.size() == 1 && constraintsList[0].size() == constraints.size()));
             for (vector<string> c: constraintsList) {
                 vector<string> constraintsCopy = c;
                 st->setTable(tableCopy);
@@ -1448,7 +1480,7 @@ public:
 
     void removeDuplicatePaths() {
         for (int i = 0; i < this->paths.size(); i++) {
-            for (int j = i + 1; j < this->paths.size() - 1; j++) {
+            for (int j = i + 1; j < this->paths.size(); j++) {
                 if (this->paths[i].compare(this->paths[j])) {
                     this->paths.erase(this->paths.begin() + j);
                     j--;
@@ -1520,6 +1552,7 @@ public:
                     if (root.compare("1"))
                         se->setType("FUNCTION");
                 }
+
                 const auto cfg = clang::CFG::buildCFG(Function,
                                                       Function->getBody(),
                                                       Result.Context,
