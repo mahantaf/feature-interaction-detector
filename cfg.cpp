@@ -116,6 +116,12 @@ public:
         ofs.close();
     }
 
+    void clearWriteConstarintsFile() {
+        std::ofstream ofs;
+        ofs.open(this->folder + this->returnConstraintFile, std::ofstream::out | std::ofstream::trunc);
+        ofs.close();
+    }
+
     map<string, pair<set<string>, string>> readSymbolTable() {
         string line;
         ifstream infile(this->folder + this->symbolTableFile);
@@ -549,7 +555,7 @@ vector<string> split(string s, char delimiter) {
     return substrings;
 }
 
-set<pair<string, string>> findPairsWithSameFirst(set<pair<string, string>>& vars) {
+set<pair<string, string>> findPairsWithSameFirst(set<pair<string, string>> vars) {
     set<pair<string, string>> duplicatePairs;
     for (set<pair<string, string>>::iterator i = vars.begin(); i != vars.end(); ++i) {
         pair<string, string> selector = *i;
@@ -1030,7 +1036,7 @@ public:
     }
 
     string replaceFunctionCallByReturnValue(string& statement, string& functionName, string& returnValue) {
-        regex e(functionName + "\\((.*)\\)");
+        regex e("(this->)*" + functionName + "\\((.*)\\)");
         return regex_replace(statement, e, returnValue);
     }
 
@@ -1102,7 +1108,13 @@ public:
 
         string replacedStatement = this->replaceFunctionCallByReturnValue(statement, functionName, returnValue);
 
-        this->replaceVariables(replacedStatement, operands);
+        if (operands.size()) {
+            set<pair<string, string>> duplicate = findPairsWithSameFirst(operands);
+            if (duplicate.size())
+                this->replaceStaticSingleAssignment(replacedStatement, operands, duplicate);
+            else
+                this->replaceVariables(replacedStatement, operands);
+        }
         return replacedStatement;
     }
 };
@@ -1182,6 +1194,7 @@ public:
                         se->saveParameterTypes(name, paramNames[i], paramTypes[i]);
 
                         string sysCall = "./cfg " + filePath + " -- " + name + " c RETURN 0";
+                        cout << sysCall << endl;
                         system(sysCall.c_str());
 
                         se->loadState();
@@ -1190,7 +1203,9 @@ public:
                         vector<vector<string>> functionConstraintsList = this->fs.readReturnConstraints(returnValues);
 
                         int index = 0;
+                        string copyStatement = statement;
                         for (string returnValue: returnValues) {
+                            statement = copyStatement;
                             string ts = this->transpiler.replaceFunction(statement, stmtClass, name, returnValue, operands);
                             functionConstraintsList[index].insert(functionConstraintsList[index].begin(), ts);
                             index++;
@@ -1377,13 +1392,6 @@ public:
                 constraints.push_back(terminatorCondition);
         }
         vector<vector<string>> constraintsList = this->cfgBlockHandler.getBlockCondition(startBlock, constraints);
-        for (int i = 0; i < constraintsList.size(); i++) {
-            cout << i << ". ";
-            for (string s: constraintsList[i]) {
-                cout << s << ' ';
-            }
-            cout << endl;
-        }
         SymbolTable *st = st->getInstance();
         map<string, pair<set<string>, string>> tableCopy = st->getTable();
         for (clang::CFGBlock::const_pred_iterator I = startBlock->pred_begin(), E = startBlock->pred_end(); I != E; I++) {
@@ -1411,13 +1419,12 @@ public:
             this->fs.writeFunctionParametersType(functionIncident->getParamTypes());
             return;
         }
-        vector<vector<string>> initialConstraintsList = this->fs.readFunctionConstraints();
-        this->fs.clearMainConstraintsFile();
-        cout << "List of constraints:\n";
-        for (vector<string> initialConstraints : initialConstraintsList) {
-            for (string c : initialConstraints)
-                cout << c << ' ';
-            cout << endl;
+        vector<vector<string>> initialConstraintsList;
+        if (this->incident->getType().compare("RETURN") != 0) {
+            initialConstraintsList = this->fs.readFunctionConstraints();
+            this->fs.clearMainConstraintsFile();
+        } else {
+            this->fs.clearWriteConstarintsFile();
         }
         if (initialConstraintsList.size()) {
             SymbolTable *st = st->getInstance();
