@@ -854,6 +854,33 @@ Incident* createIncident() {
 
 void getStmtOperands(const clang::Stmt* stmt, set<pair<string, string>>& operands, string type) {
     const string stmtClass(stmt->getStmtClassName());
+//    cout << getStatementString(stmt) << ' ' << stmtClass << ' ' << type << endl;
+    if (stmtClass.compare("CXXOperatorCallExpr") == 0) {
+        const clang::CXXOperatorCallExpr* cxxOperatorCallExpr = cast<clang::CXXOperatorCallExpr>(stmt);
+        const clang::Stmt *lhs, *rhs;
+        int i = 0;
+        for (clang::ConstStmtIterator it = stmt->child_begin(); it != stmt->child_end(); it++) {
+            if (i == 0) {
+                ++i;
+                continue;
+            }
+            if (i == 1)
+                lhs = (*it);
+            if (i == 2)
+                rhs = (*it);
+            ++i;
+        }
+        if (lhs && rhs) {
+            if (cxxOperatorCallExpr->isAssignmentOp()) {
+                getStmtOperands(lhs, operands, "LVALUE");
+                if (operands.size())
+                    getStmtOperands(rhs, operands, "RVALUE");
+            } else {
+                getStmtOperands(lhs, operands, "COND");
+                getStmtOperands(rhs, operands, "COND");
+            }
+        }
+    }
     if (stmtClass.compare("BinaryOperator") == 0 || stmtClass.compare("CompoundAssignOperator") == 0) {
 
         const clang::BinaryOperator *binaryOperator = cast<clang::BinaryOperator>(stmt);
@@ -950,18 +977,21 @@ void getStmtOperands(const clang::Stmt* stmt, set<pair<string, string>>& operand
 }
 
 bool hasFunctionCall(const clang::Stmt* stmt, string stmtClass, vector<string>& names, vector<vector<string>>& paramNames, vector<vector<string>>& paramTypes) {
+    cout << getStatementString(stmt) << " " << stmtClass << endl;
     if (stmtClass.compare("BinaryOperator") == 0 || stmtClass.compare("CompoundAssignOperator") == 0) {
         const clang::BinaryOperator *binaryOperator = cast<clang::BinaryOperator>(stmt);
         const clang::Stmt *lhs = binaryOperator->getLHS();
         const clang::Stmt *rhs = binaryOperator->getRHS();
         return hasFunctionCall(lhs, lhs->getStmtClassName(), names, paramNames, paramTypes) ||
                hasFunctionCall(rhs, rhs->getStmtClassName(), names, paramNames, paramTypes);
-    } else if (stmtClass.compare("ImplicitCastExpr") == 0) {
+    }
+    else if (stmtClass.compare("ImplicitCastExpr") == 0) {
 
         const clang::Stmt *subExpr = cast<clang::ImplicitCastExpr>(stmt)->getSubExpr();
         return hasFunctionCall(subExpr, subExpr->getStmtClassName(), names, paramNames, paramTypes);
 
-    } else if (stmtClass.compare("CallExpr") == 0 || stmtClass.compare("CXXMemberCallExpr") == 0) {
+    }
+    else if (stmtClass.compare("CallExpr") == 0 || stmtClass.compare("CXXMemberCallExpr") == 0) {
 
         const clang::CallExpr *callExpr = cast<clang::CallExpr>(stmt);
 
@@ -980,6 +1010,20 @@ bool hasFunctionCall(const clang::Stmt* stmt, string stmtClass, vector<string>& 
             paramTypes.push_back(paramType);
             names.push_back(functionDecl->getNameInfo().getAsString());
             return true;
+        }
+    }
+    else if (stmtClass.compare("DeclStmt") == 0)
+    {
+        const clang::DeclStmt *declStmt = cast<clang::DeclStmt>(stmt);
+        const clang::Decl* declaration = declStmt->getSingleDecl();
+        if (declaration) {
+            const clang::VarDecl *varDecl = cast<clang::VarDecl>(declaration);
+            cout << "VarDecl: " << varDecl->getNameAsString() << " has init: " << varDecl->hasInit() << endl;
+             if (varDecl && varDecl->hasInit()) {
+                cout << "Has init:\n";
+                const clang::Stmt* rhs = varDecl->getInit();
+                return hasFunctionCall(rhs, rhs->getStmtClassName(), names, paramNames, paramTypes);
+            }
         }
     }
     return false;
@@ -1170,16 +1214,26 @@ public:
 
     vector<vector<string>> getBlockCondition(const clang::CFGBlock* block, vector<string>& constraints) {
         this->initializeConstraints(constraints);
+
+        string terminator = "";
+        const clang::Stmt *terminatorStmt = block->getTerminatorStmt();
+        if (terminatorStmt && terminatorStmt->getStmtClass() != clang::Stmt::IfStmtClass)
+            terminator = getStatementString(terminatorStmt);
+
         for (clang::CFGBlock::const_reverse_iterator I = block->rbegin(), E = block->rend(); I != E ; ++I) {
             clang::CFGElement El = *I;
             if (auto SE = El.getAs<clang::CFGStmt>()) {
+
                 const clang::Stmt *stmt = SE->getStmt();
+
+                string statement = getStatementString(stmt);
+                if (terminator.compare("") != 0 && terminator.find(statement) != std::string::npos)
+                    continue;
+
                 string stmtClass(stmt->getStmtClassName());
                 set<pair<string, string>> operands;
                 getStmtOperands(stmt, operands, "");
 
-                string statement = getStatementString(stmt);
-//                cout << statement << endl;
                 vector<string> funcNames;
                 vector<vector<string>> paramNames;
                 vector<vector<string>> paramTypes;
