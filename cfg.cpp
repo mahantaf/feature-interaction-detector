@@ -355,7 +355,9 @@ public:
          */
         string varSymbol = "";
         if ((this->type.compare("RETURN") == 0 || this->type.compare("FUNCTION") == 0)) {
+            cout << "VAR: " << var << endl;
             if (this->isInParams(var) != -1) {
+                cout << "Pass parameter: " << var << endl;
                 int paramIndex = this->isInParams(var);
                 string passParam = this->passParams[paramIndex];
                 string passParamType = this->passParamTypes[paramIndex];
@@ -364,16 +366,32 @@ public:
                     varSymbol = passParam;
                     setVariableSymbol(var, varSymbol);
                 } else {
+                    string copyType = this->type;
                     this->type = "";
                     varSymbol = addVariableSymbol(passParam, type);
                     setVariableSymbol(var, varSymbol);
-                    this->type = "RETURN";
+                    this->type = copyType;
                 }
             } else if (this->isMemberVariable(var)) {
+                cout << "Member variable: " << var << endl;
+                string copyType = this->type;
                 this->type = "";
                 varSymbol = addVariableSymbol(var, type);
                 setVariableSymbol(var, varSymbol);
-                this->type = "RETURN";
+                this->type = copyType;
+            } else {
+                cout << "Local Variable: " << var << endl;
+                var = var + "_" + functionName;
+                if (this->getVariableSymbols(var).size() == 0) {
+                    if (type.compare("LVALUE"))
+                        varSymbol = this->insertNewSymbol(var);
+                    if (type.compare("IVALUE") == 0)
+                        this->insertNewSymbol(var);
+                } else {
+                    varSymbol = this->getVariableLastSymbol(var);
+                    if (type.compare("LVALUE") == 0 || type.compare("IVALUE") == 0)
+                        this->insertNewSymbol(var);
+                }
             }
         } else {
             if (this->getVariableSymbols(var).size() == 0) {
@@ -474,9 +492,9 @@ public:
 
 protected:
     string insertNewSymbol(string variable) {
-        if (this->type.compare("RETURN") == 0 || this->type.compare("FUNCTION") == 0) {
-            this->symbol = "ref";
-        }
+//        if (this->type.compare("RETURN") == 0 || this->type.compare("FUNCTION") == 0) {
+//            this->symbol = "ref";
+//        }
         set<string> variableSymbols = this->getVariableSymbols(variable);
         string s = variable + "_" + this->symbol + to_string(variableSymbols.size());
         variableSymbols.insert(s);
@@ -495,10 +513,11 @@ protected:
     }
 
     bool isMemberVariable(string variable) {
-        regex e ("this->");
-        if (regex_match(variable, e))
+//        regex e ("this->");
+        if (variable.find("this->") != string::npos)
             return true;
-        return true;
+//        if (regex_match(variable, e))
+        return false;
     }
 
     bool isLiteral(string variableType) {
@@ -962,7 +981,7 @@ void getStmtOperands(const clang::Stmt* stmt, set<pair<string, string>>& operand
             }
         }
     }
-    else if (stmtClass.compare("ReturnStmt") == 0) {
+    else if (stmtClass.compare("ReturnStmt") == 0 && incidentType.compare("RETURN") == 0) {
         const clang::Stmt* returnValue = cast<clang::ReturnStmt>(stmt)->getRetValue();
         if (returnValue) {
             string returnValueClass(returnValue->getStmtClassName());
@@ -1237,8 +1256,7 @@ public:
                 vector<string> funcNames;
                 vector<vector<string>> paramNames;
                 vector<vector<string>> paramTypes;
-
-                if (stmtClass.compare("CallExpr") && stmtClass.compare("CXXMemberCallExpr") && hasFunctionCall(stmt, stmtClass, funcNames, paramNames, paramTypes)) {
+                if (operands.size() && stmtClass.compare("CallExpr") && stmtClass.compare("CXXMemberCallExpr") && hasFunctionCall(stmt, stmtClass, funcNames, paramNames, paramTypes)) {
                     int i = 0;
                     for (string name: funcNames) {
                         cout << "Function name: " << name << endl;

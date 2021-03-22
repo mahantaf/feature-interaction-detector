@@ -246,6 +246,7 @@ void runCommand(Command& command, string fileName, string isRoot, int clCount) {
 int main(int argc, const char **argv) {
 
 //    string fileName = "tests/multiple/test.cpp";
+//    string command = "foo CALL bar WRITE c";
 //    string command = "foo CALL bar WRITE c VARINFUNC isTrue WRITE c";
 
 
