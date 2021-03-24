@@ -839,7 +839,6 @@ public:
             variables.insert(cast<clang::MemberExpr>(stmt)->getMemberNameInfo().getAsString());
 
         } else if (stmtClass.compare("DeclRefExpr") == 0) {
-
             variables.insert(getStatementString(stmt));
         }
     }
@@ -850,6 +849,128 @@ public:
 private:
     vector<string> params;
     vector<string> paramTypes;
+};
+
+class VarWriteIncident: public Incident {
+public:
+    VarWriteIncident(string incident) : Incident(incident, "VARWRITE") {}
+
+    bool hasIncident(const clang::Stmt *stmt, vector<string> &incidentValues) {
+        return true;
+    }
+
+    bool hasIncidentExtend(const clang::Stmt* stmt) {
+        const string stmtClass(stmt->getStmtClassName());
+        string lhsVar = "";
+        set<string> variables;
+
+        if (stmtClass.compare("BinaryOperator") == 0 || stmtClass.compare("CompoundAssignOperator") == 0) {
+            const clang::BinaryOperator *binaryOperator = cast<clang::BinaryOperator>(stmt);
+            const clang::Stmt *lhs = binaryOperator->getLHS();
+            const clang::Stmt *rhs = binaryOperator->getRHS();
+
+            lhsVar = this->getBinaryOperatorLHSVariable(lhs);
+            this->getBinaryOperatorRHSVariables(rhs, variables);
+
+        } else if (stmtClass.compare("DeclStmt") == 0) {
+            lhsVar = this->getDeclStatementLHSVariable(stmt);
+            this->getDeclStatementRHSVariables(stmt, variables);
+        }
+//        cout << "STATEMENT: " << getStatementString(stmt) << endl;
+//        cout << "LHS: " << lhsVar << endl;
+//        cout << "RHS: ";
+//        for (string s : variables)
+//            cout << s << ' ';
+//        cout << endl;
+        if (lhsVar.compare(incident) == 0 && hasVariable(functionName, variables)) {
+            cout << getStatementString(stmt) << endl;
+            return true;
+        }
+        return false;
+//        return lhsVar.compare(functionName) == 0 && hasVariable(incident, variables);
+    }
+
+    bool hasVariable(string variable, set<string>& variables) {
+        for (string var : variables)
+            if (var.compare(variable) == 0)
+                return true;
+        return false;
+    }
+
+    void getBinaryOperatorRHSVariables(const clang::Stmt* stmt, set<string>& variables) {
+        const string stmtClass(stmt->getStmtClassName());
+        if (stmtClass.compare("ParenExpr") == 0) {
+            const clang::ParenExpr *parenExpr = cast<clang::ParenExpr>(stmt);
+            const clang::Stmt *subParen = parenExpr->getSubExpr();
+            getBinaryOperatorRHSVariables(subParen, variables);
+
+        } else if (stmtClass.compare("BinaryOperator") == 0) {
+
+            const clang::BinaryOperator *binaryOperator = cast<clang::BinaryOperator>(stmt);
+            const clang::Stmt *lhs = binaryOperator->getLHS();
+            const clang::Stmt *rhs = binaryOperator->getRHS();
+            getBinaryOperatorRHSVariables(lhs, variables);
+            getBinaryOperatorRHSVariables(rhs, variables);
+
+        } else if (stmtClass.compare("UnaryOperator") == 0) {
+
+            const clang::Stmt *subExpr = cast<clang::UnaryOperator>(stmt)->getSubExpr();
+            getBinaryOperatorRHSVariables(subExpr, variables);
+
+        } else if (stmtClass.compare("ImplicitCastExpr") == 0) {
+
+            const clang::Stmt *subExpr = cast<clang::ImplicitCastExpr>(stmt)->getSubExpr();
+            getBinaryOperatorRHSVariables(subExpr, variables);
+
+        } else if (stmtClass.compare("MemberExpr") == 0) {
+
+            variables.insert(cast<clang::MemberExpr>(stmt)->getMemberNameInfo().getAsString());
+
+        } else if (stmtClass.compare("DeclRefExpr") == 0) {
+            variables.insert(getStatementString(stmt));
+        }
+    }
+
+    void getDeclStatementRHSVariables(const clang::Stmt* stmt, set<string>& variables) {
+        const clang::DeclStmt *declStmt = cast<clang::DeclStmt>(stmt);
+        const clang::Decl* declaration = declStmt->getSingleDecl();
+        if (declaration) {
+            const clang::VarDecl* varDecl = cast<clang::VarDecl>(declaration);
+            if (varDecl && varDecl->hasInit()) {
+                const clang::Stmt* rhs = varDecl->getInit();
+                getBinaryOperatorRHSVariables(rhs, variables);
+            }
+        }
+    }
+
+    string getBinaryOperatorLHSVariable(const clang::Stmt* stmt) {
+        const string stmtClass(stmt->getStmtClassName());
+        if (stmtClass.compare("ImplicitCastExpr") == 0) {
+            const clang::Stmt *subExpr = cast<clang::ImplicitCastExpr>(stmt)->getSubExpr();
+            return getBinaryOperatorLHSVariable(subExpr);
+        } else if (stmtClass.compare("MemberExpr") == 0) {
+            return cast<clang::MemberExpr>(stmt)->getMemberNameInfo().getAsString();
+        } else if (stmtClass.compare("DeclRefExpr") == 0) {
+            return getStatementString(stmt);
+        }
+    }
+
+    string getDeclStatementLHSVariable(const clang::Stmt* stmt) {
+        const clang::DeclStmt *declStmt = cast<clang::DeclStmt>(stmt);
+        const clang::Decl* declaration = declStmt->getSingleDecl();
+        if (declaration) {
+            const clang::VarDecl *varDecl = cast<clang::VarDecl>(declaration);
+            if (varDecl && varDecl->hasInit()) {
+                const clang::Stmt *rhs = varDecl->getInit();
+                return varDecl->getNameAsString();
+            }
+        }
+    }
+
+    void print() {
+        cout << "VarWrite Incident" << endl;
+    }
+
 };
 
 Incident* createIncident() {
@@ -867,6 +988,9 @@ Incident* createIncident() {
     }
     if (incidentType.compare("VARINFFUNC") == 0 || incidentType.compare("VARINFUNCEXTEND") == 0) {
         return new VarInFuncIncident(incident);
+    }
+    if (incidentType.compare("VARWRITE") == 0) {
+        return new VarWriteIncident(incident);
     }
     return nullptr;
 }
@@ -1579,6 +1703,38 @@ private:
     vector<const clang::Stmt*> incidentStatements;
 };
 
+class VarWriteHandler {
+public:
+    VarWriteHandler() {
+        this->incident = createIncident();
+    };
+
+    bool findIncidents(const clang::Stmt* stmt) {
+        const string stmtClass(stmt->getStmtClassName());
+        VarWriteIncident* varWriteIncident = dynamic_cast<VarWriteIncident*>(this->incident);
+        return varWriteIncident->hasIncidentExtend(stmt);
+    }
+private:
+    Incident* incident;
+};
+
+class DeclCallBack: public clang::ast_matchers::MatchFinder::MatchCallback {
+public:
+    DeclCallBack() {}
+    void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) {
+        Context *context = context->getInstance();
+        context->setContext(Result);
+
+        const auto* declStmt = Result.Nodes.getNodeAs<clang::Stmt>("declaration");
+        clang::SourceLocation SL = declStmt->getBeginLoc();
+        const clang::SourceManager *SM = Result.SourceManager;
+        if (SM->isInMainFile(SL)) {
+            VarWriteHandler* varWriteHandler = new VarWriteHandler();
+            bool hasIncident = varWriteHandler->findIncidents(declStmt);
+        }
+    }
+};
+
 class MyCallback : public clang::ast_matchers::MatchFinder::MatchCallback {
 public:
     MyCallback() {}
@@ -1586,7 +1742,7 @@ public:
         Context *context = context->getInstance();
         context->setContext(Result);
 
-        if (incidentType.compare("VARINFFUNC") == 0 || incidentType.compare("VARINFUNCEXTEND") == 0 || incidentType.compare("VARWRITE") == 0) {
+        if (incidentType.compare("VARINFFUNC") == 0 || incidentType.compare("VARINFUNCEXTEND") == 0) {
 
             CFGHandler cfgHandler(nullptr);
             if (!context->getConstraintsListSet()) {
@@ -1601,13 +1757,21 @@ public:
             clang::SourceLocation SL = If->getBeginLoc();
             const clang::SourceManager *SM = Result.SourceManager;
             if (SM->isInMainFile(SL)) {
-//                cout << getStatementString(If) << endl;
                 CFGHandler cfgHandler(nullptr);
                 if (incidentType.compare("VARINFFUNC") == 0)
                     cfgHandler.findStatementIncident(If);
                 else if (incidentType.compare("VARINFUNCEXTEND") == 0)
                     cfgHandler.findChildStatementIncident(If);
                 return;
+            }
+        } else if(incidentType.compare("VARWRITE") == 0) {
+            const auto* binaryStmt = Result.Nodes.getNodeAs<clang::Stmt>("binary");
+
+            clang::SourceLocation SL = binaryStmt->getBeginLoc();
+            const clang::SourceManager *SM = Result.SourceManager;
+            if (SM->isInMainFile(SL)) {
+                VarWriteHandler* varWriteHandler = new VarWriteHandler();
+                varWriteHandler->findIncidents(binaryStmt);
             }
         } else {
             const auto* Function = Result.Nodes.getNodeAs<clang::FunctionDecl>("fn");
@@ -1647,12 +1811,20 @@ public:
 
 class MyConsumer : public clang::ASTConsumer {
 public:
-    explicit MyConsumer() : handler() {
-        if (incidentType.compare("VARINFFUNC") == 0 || incidentType.compare("VARINFUNCEXTEND") == 0 || incidentType.compare("VARWRITE") == 0) {
+    explicit MyConsumer() : handler(), declHandler() {
+        if (incidentType.compare("VARINFFUNC") == 0 || incidentType.compare("VARINFUNCEXTEND") == 0) {
             const auto matching_node = clang::ast_matchers::ifStmt().bind("if");
             match_finder.addMatcher(matching_node, &handler);
+        } else if (incidentType.compare("VARWRITE") == 0) {
+            const auto matching_node_binary = clang::ast_matchers::binaryOperator(clang::ast_matchers::isAssignmentOperator()).bind(
+                    "binary");
+            const auto matching_node_declaration = clang::ast_matchers::declStmt().bind(
+                    "declaration");
+            match_finder.addMatcher(matching_node_binary, &handler);
+            match_finder.addMatcher(matching_node_declaration, &declHandler);
         } else {
-            const auto matching_node = clang::ast_matchers::functionDecl(clang::ast_matchers::hasName(functionName)).bind("fn");
+            const auto matching_node = clang::ast_matchers::functionDecl(
+                    clang::ast_matchers::hasName(functionName)).bind("fn");
             match_finder.addMatcher(matching_node, &handler);
         }
     }
@@ -1662,6 +1834,7 @@ public:
     }
 private:
     MyCallback handler;
+    DeclCallBack declHandler;
     clang::ast_matchers::MatchFinder match_finder;
 };
 

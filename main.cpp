@@ -248,7 +248,7 @@ int main(int argc, const char **argv) {
 //    string fileName = "tests/multiple/test.cpp";
 //    string command = "foo CALL bar WRITE c";
 //    string command = "foo CALL bar WRITE c VARINFUNC isTrue WRITE c";
-
+    // route_publisher::RoutePublisherNodelet::refGPSCb WRITE route_publisher::RoutePublisherNodelet::first_init_path VARWRITE update_needed
 
 //    string fileName = "autonomoose_core/shuttle_manager/src/shuttle_manager_nodelet.cpp";
 //    string command = "ShuttleConfirmationCb WRITE current_state VARINFFUNC processNextShuttleRequest WRITE current_state";
