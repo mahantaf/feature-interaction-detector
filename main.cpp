@@ -246,15 +246,16 @@ void runCommand(Command& command, string fileName, string isRoot, int clCount) {
 int main(int argc, const char **argv) {
 
 //    string fileName = "tests/multiple/test.cpp";
-//    string command = "foo CALL bar WRITE c";
+//    string command = "bar WRITE c VARWRITE h";
 //    string command = "foo CALL bar WRITE c VARINFUNC isTrue WRITE c";
-    // route_publisher::RoutePublisherNodelet::refGPSCb WRITE route_publisher::RoutePublisherNodelet::first_init_path VARWRITE update_needed
+
 
 //    string fileName = "autonomoose_core/shuttle_manager/src/shuttle_manager_nodelet.cpp";
 //    string command = "ShuttleConfirmationCb WRITE current_state VARINFFUNC processNextShuttleRequest WRITE current_state";
 
     string fileName = "autonomoose_core/route_publisher/src/route_publisher_nodelet.cpp";
-    string command = "refGPSCb WRITE ref_gps_flag_ VARINFFUNC updatePath CALL fillPathsFromRoutePlan WRITE route_plan";
+    string command = "refGPSCb WRITE first_init_path VARWRITE update_needed";
+//    string command = "refGPSCb WRITE ref_gps_flag_ VARINFFUNC updatePath CALL fillPathsFromRoutePlan WRITE route_plan";
 
     vector<string> commands = parseCommand(command);
 

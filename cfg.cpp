@@ -70,6 +70,10 @@ public:
         return this->constraintsListSet;
     }
 
+    string getCurrentFunction() {
+        return this->currentFunction;
+    }
+
     void setContext(clang::ast_matchers::MatchFinder::MatchResult context) {
         this->context = &context;
     }
@@ -79,12 +83,17 @@ public:
         this->constraintsListSet = true;
     }
 
+    void setCurrentFunction(string currentFunction) {
+        this->currentFunction = currentFunction;
+    }
+
 private:
     Context() { this->constraintsListSet = false; }
     static Context *instance;
     clang::ast_matchers::MatchFinder::MatchResult* context;
     vector<vector<string>> initialConstraintsList;
     bool constraintsListSet;
+    string currentFunction;
 };
 
 string getStatementString(const clang::Stmt* stmt) {
@@ -103,6 +112,7 @@ public:
         this->folder = "temp/";
         this->constraintFile = "constraints.txt";
         this->returnConstraintFile = "return_constraints.txt";
+        this->varWriteConstraintFile = "var_write_constraints.txt";
         this->symbolTableFile = "symbols.txt";
         this->parametersFile = "_params.txt";
         this->parameterTypesFile = "_param_types.txt";
@@ -119,6 +129,12 @@ public:
     void clearWriteConstarintsFile() {
         std::ofstream ofs;
         ofs.open(this->folder + this->returnConstraintFile, std::ofstream::out | std::ofstream::trunc);
+        ofs.close();
+    }
+
+    void clearVarWriteConstraintsFile() {
+        std::ofstream ofs;
+        ofs.open(this->folder + this->varWriteConstraintFile, std::ofstream::out | std::ofstream::trunc);
         ofs.close();
     }
 
@@ -195,6 +211,24 @@ public:
     vector<vector<string>> readFunctionConstraints() {
         cout << "In reading constraint from previous pipeline\n";
         ifstream infile(this->constraintFile);
+        string line;
+        vector<vector<string>> constraintsList;
+        vector<string> constraints;
+
+        while (getline(infile, line)) {
+            cout << line << endl;
+            if (line.compare("---------------") == 0) {
+                constraintsList.push_back(constraints);
+                constraints.clear();
+            } else {
+                constraints.push_back(line);
+            }
+        }
+        return constraintsList;
+    }
+
+    vector<vector<string>> readVarWriteConstraints() {
+        ifstream infile(this->folder + this->varWriteConstraintFile);
         string line;
         vector<vector<string>> constraintsList;
         vector<string> constraints;
@@ -305,6 +339,11 @@ public:
         return this->writeConstraints(constraints, file);
     }
 
+    void writeVarWriteConstraints(vector<string>& constraints) {
+        ofstream file (this->folder + this->varWriteConstraintFile, ios_base::app);
+        return this->writeConstraints(constraints, file);
+    }
+
     void writeReturnConstraints(vector<string>& constraints) {
         ofstream file;
         file.open(this->folder + this->returnConstraintFile, ios_base::app);
@@ -324,6 +363,7 @@ private:
     string folder;
     string constraintFile;
     string returnConstraintFile;
+    string varWriteConstraintFile;
     string symbolTableFile;
     string parametersFile;
     string parameterTypesFile;
@@ -355,9 +395,7 @@ public:
          */
         string varSymbol = "";
         if ((this->type.compare("RETURN") == 0 || this->type.compare("FUNCTION") == 0)) {
-            cout << "VAR: " << var << endl;
             if (this->isInParams(var) != -1) {
-                cout << "Pass parameter: " << var << endl;
                 int paramIndex = this->isInParams(var);
                 string passParam = this->passParams[paramIndex];
                 string passParamType = this->passParamTypes[paramIndex];
@@ -373,15 +411,14 @@ public:
                     this->type = copyType;
                 }
             } else if (this->isMemberVariable(var)) {
-                cout << "Member variable: " << var << endl;
                 string copyType = this->type;
                 this->type = "";
                 varSymbol = addVariableSymbol(var, type);
                 setVariableSymbol(var, varSymbol);
                 this->type = copyType;
             } else {
-                cout << "Local Variable: " << var << endl;
-                var = var + "_" + functionName;
+                Context *context = context->getInstance();
+                var = incidentType.compare("VARWRITE") == 0 ? var + "_" + context->getCurrentFunction() : var + "_" + functionName;
                 if (this->getVariableSymbols(var).size() == 0) {
                     if (type.compare("LVALUE"))
                         varSymbol = this->insertNewSymbol(var);
@@ -513,10 +550,8 @@ protected:
     }
 
     bool isMemberVariable(string variable) {
-//        regex e ("this->");
         if (variable.find("this->") != string::npos)
             return true;
-//        if (regex_match(variable, e))
         return false;
     }
 
@@ -856,7 +891,23 @@ public:
     VarWriteIncident(string incident) : Incident(incident, "VARWRITE") {}
 
     bool hasIncident(const clang::Stmt *stmt, vector<string> &incidentValues) {
-        return true;
+        const string stmtClass(stmt->getStmtClassName());
+        string lhsVar = "";
+        set<string> variables;
+
+        if (stmtClass.compare("BinaryOperator") == 0 || stmtClass.compare("CompoundAssignOperator") == 0) {
+            const clang::BinaryOperator *binaryOperator = cast<clang::BinaryOperator>(stmt);
+            const clang::Stmt *lhs = binaryOperator->getLHS();
+            const clang::Stmt *rhs = binaryOperator->getRHS();
+
+            lhsVar = this->getBinaryOperatorLHSVariable(lhs);
+            this->getBinaryOperatorRHSVariables(rhs, variables);
+
+        } else if (stmtClass.compare("DeclStmt") == 0) {
+            lhsVar = this->getDeclStatementLHSVariable(stmt);
+            this->getDeclStatementRHSVariables(stmt, variables);
+        }
+        return lhsVar.compare(incident) == 0 && hasVariable(functionName, variables);
     }
 
     bool hasIncidentExtend(const clang::Stmt* stmt) {
@@ -876,18 +927,7 @@ public:
             lhsVar = this->getDeclStatementLHSVariable(stmt);
             this->getDeclStatementRHSVariables(stmt, variables);
         }
-//        cout << "STATEMENT: " << getStatementString(stmt) << endl;
-//        cout << "LHS: " << lhsVar << endl;
-//        cout << "RHS: ";
-//        for (string s : variables)
-//            cout << s << ' ';
-//        cout << endl;
-        if (lhsVar.compare(incident) == 0 && hasVariable(functionName, variables)) {
-            cout << getStatementString(stmt) << endl;
-            return true;
-        }
-        return false;
-//        return lhsVar.compare(functionName) == 0 && hasVariable(incident, variables);
+        return lhsVar.compare(incident) == 0 && hasVariable(functionName, variables);
     }
 
     bool hasVariable(string variable, set<string>& variables) {
@@ -1031,7 +1071,14 @@ void getStmtOperands(const clang::Stmt* stmt, set<pair<string, string>>& operand
         const clang::Stmt *rhs = binaryOperator->getRHS();
 
         if (binaryOperator->isCompoundAssignmentOp()) {
-            getStmtOperands(lhs, operands, "LVALUE");
+            Incident* incident = createIncident();
+            vector<string> temp;
+            if ((incident->getType().compare("WRITE") == 0 || incident->getType().compare("VARWRITE") == 0) && incident->hasIncident(stmt, temp)) {
+                getStmtOperands(lhs, operands, "IVALUE");
+            } else {
+                getStmtOperands(lhs, operands, "LVALUE");
+            }
+//            getStmtOperands(lhs, operands, "LVALUE");
             if (operands.size()) {
                 getStmtOperands(lhs, operands, "RVALUE");
                 getStmtOperands(rhs, operands, "RVALUE");
@@ -1040,7 +1087,7 @@ void getStmtOperands(const clang::Stmt* stmt, set<pair<string, string>>& operand
         } else if (binaryOperator->isAssignmentOp()) {
             Incident* incident = createIncident();
             vector<string> temp;
-            if (incident->getType().compare("WRITE") == 0 && incident->hasIncident(stmt, temp)) {
+            if ((incident->getType().compare("WRITE") == 0 || incident->getType().compare("VARWRITE") == 0) && incident->hasIncident(stmt, temp)) {
                 getStmtOperands(lhs, operands, "IVALUE");
             } else {
                 getStmtOperands(lhs, operands, "LVALUE");
@@ -1095,7 +1142,15 @@ void getStmtOperands(const clang::Stmt* stmt, set<pair<string, string>>& operand
                 const clang::Stmt* rhs = varDecl->getInit();
                 string var = varDecl->getNameAsString();
                 SymbolTable *st = st->getInstance();
-                string varSymbol = st->addVariableSymbol(var, "LVALUE");
+
+                Incident* incident = createIncident();
+                vector<string> temp;
+                string varSymbol = "";
+                if (incident->getType().compare("VARWRITE") == 0 && incident->hasIncident(stmt, temp)) {
+                    varSymbol = st->addVariableSymbol(var, "IVALUE");
+                } else {
+                    varSymbol = st->addVariableSymbol(var, "LVALUE");
+                }
                 if (varSymbol.compare("")) {
                     pair <string, string> op(var, varSymbol);
                     operands.insert(op);
@@ -1505,6 +1560,10 @@ public:
             this->cfg = &cfg;
     }
 
+    bool hasIncident() {
+        return this->incidentBlocks.size() > 0;
+    }
+
     void findIncidents() {
         for (const auto* blk : **(this->cfg)) {
             for (clang::CFGBlock::const_iterator I = blk->begin(), E = blk->end(); I != E; ++I) {
@@ -1658,15 +1717,25 @@ public:
         this->removeDuplicatePaths();
         for (Path path: this->paths) {
             vector<string> constraints = path.getConstraints();
-            if (incidentType.compare("RETURN"))
-                this->fs.writeMainConstraints(constraints);
-            else
+            if (incidentType.compare("RETURN") == 0)
                 this->fs.writeReturnConstraints(constraints);
+            else if (incidentType.compare("VARWRITE") == 0)
+                this->fs.writeVarWriteConstraints(constraints);
+            else
+                this->fs.writeMainConstraints(constraints);
+
             cout << "Sub Path: ";
             for (string s: constraints)
                 cout << s << " & ";
             cout << endl;
         }
+    }
+    void writeVarWritePaths() {
+        vector<vector<string>> varWritePaths = this->fs.readVarWriteConstraints();
+        this->fs.clearMainConstraintsFile();
+        for (vector<string> constraints: varWritePaths)
+            this->fs.writeMainConstraints(constraints);
+        this->fs.clearVarWriteConstraintsFile();
     }
 
     unsigned int getEntryBlockId() {
@@ -1731,6 +1800,51 @@ public:
         if (SM->isInMainFile(SL)) {
             VarWriteHandler* varWriteHandler = new VarWriteHandler();
             bool hasIncident = varWriteHandler->findIncidents(declStmt);
+            if (hasIncident) {
+                cout << getStatementString(declStmt);
+            }
+        }
+    }
+};
+
+class VarWriteCallBack : public clang::ast_matchers::MatchFinder::MatchCallback {
+public:
+    VarWriteCallBack() {}
+
+    void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) {
+        Context *context = context->getInstance();
+        context->setContext(Result);
+        const auto *Function = Result.Nodes.getNodeAs<clang::FunctionDecl>("fn");
+        if (Function->isThisDeclarationADefinition() && Function->hasBody()) {
+            const clang::Stmt *funcBody = Function->getBody();
+            clang::SourceLocation SL = funcBody->getBeginLoc();
+            const clang::SourceManager *SM = Result.SourceManager;
+            if (SM->isInMainFile(SL)) {
+
+                string functionName = Function->getNameInfo().getAsString();
+                context->setCurrentFunction(functionName);
+                cout << "------------" << functionName << "------------" << endl;
+
+                SymbolTable *se = se->getInstance();
+                se->loadState();
+
+                vector <string> params;
+                for (clang::FunctionDecl::param_const_iterator I = Function->param_begin(), E = Function->param_end();
+                     I != E; ++I) {
+                    string name = (*I)->getNameAsString();
+                    params.push_back(name);
+                }
+                se->setParams(params);
+                se->setType("FUNCTION");
+
+                const auto cfg = clang::CFG::buildCFG(Function, Function->getBody(), Result.Context,
+                                                      clang::CFG::BuildOptions());
+
+                CFGHandler cfgHandler(cfg);
+                cfgHandler.findIncidents();
+                cfgHandler.collectConstraints();
+            }
+
         }
     }
 };
@@ -1811,17 +1925,13 @@ public:
 
 class MyConsumer : public clang::ASTConsumer {
 public:
-    explicit MyConsumer() : handler(), declHandler() {
+    explicit MyConsumer() : handler(), declHandler(), varWriteCallBack(), cfgHandler(nullptr) {
         if (incidentType.compare("VARINFFUNC") == 0 || incidentType.compare("VARINFUNCEXTEND") == 0) {
             const auto matching_node = clang::ast_matchers::ifStmt().bind("if");
             match_finder.addMatcher(matching_node, &handler);
         } else if (incidentType.compare("VARWRITE") == 0) {
-            const auto matching_node_binary = clang::ast_matchers::binaryOperator(clang::ast_matchers::isAssignmentOperator()).bind(
-                    "binary");
-            const auto matching_node_declaration = clang::ast_matchers::declStmt().bind(
-                    "declaration");
-            match_finder.addMatcher(matching_node_binary, &handler);
-            match_finder.addMatcher(matching_node_declaration, &declHandler);
+            const auto matching_node = clang::ast_matchers::functionDecl().bind("fn");
+            match_finder.addMatcher(matching_node, &varWriteCallBack);
         } else {
             const auto matching_node = clang::ast_matchers::functionDecl(
                     clang::ast_matchers::hasName(functionName)).bind("fn");
@@ -1831,10 +1941,14 @@ public:
 
     void HandleTranslationUnit(clang::ASTContext& ctx) {
         match_finder.matchAST(ctx);
+        if (incidentType.compare("VARWRITE") == 0)
+            this->cfgHandler.writeVarWritePaths();
     }
 private:
     MyCallback handler;
     DeclCallBack declHandler;
+    VarWriteCallBack varWriteCallBack;
+    CFGHandler cfgHandler;
     clang::ast_matchers::MatchFinder match_finder;
 };
 
