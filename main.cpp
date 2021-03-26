@@ -10,6 +10,36 @@
 
 using namespace std;
 
+
+vector<string> split(string str, char splitter) {
+    vector<string> words;
+    string word = "";
+    for (auto x : str) {
+        if (x == splitter) {
+            words.push_back(word);
+            word = "";
+        }
+        else {
+            word = word + x;
+        }
+    }
+    words.push_back(word);
+    return words;
+}
+
+void readRawCommands() {
+    ifstream infile("Result.txt");
+    string line;
+
+
+    while (getline(infile, line)) {
+        vector<string> splitedLine = split(line, ' ');
+        if (splitedLine[0].compare("from") === 0) {
+
+        }
+    }
+}
+
 class FileSystem {
 public:
     FileSystem() {
@@ -161,18 +191,6 @@ public:
         this->command = command;
     }
 
-    int getSubCommandsSize() {
-        return this->subCommands.size();
-    }
-
-    vector<Command> getSubCommands() {
-        return this->subCommands;
-    }
-
-    void addSubCommand(Command command) {
-        this->subCommands.push_back(command);
-    }
-
     void setParams(vector<string> params) {
         this->params = params;
     }
@@ -199,14 +217,11 @@ public:
         }
     }
 
-    vector<Command> subCommands;
     vector<string> params;
     vector<string> paramTypes;
     string command;
     string functionName;
     string incident;
-    Command* next;
-    Command* prev;
 };
 
 vector<string> parseCommand(string str) {
