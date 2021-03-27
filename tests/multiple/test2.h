@@ -8,6 +8,8 @@
 class Test2 {
 public:
     int test();
+    void foo();
+    void bar(int a, char b);
 };
 
 #endif //TEST2_H
