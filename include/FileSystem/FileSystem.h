@@ -46,13 +46,13 @@ public:
 
     void writeFunctionParametersType(vector<string> paramTypes);
 
-    void writeVarInFuncParametersType(vector<string> paramTypes, bool varInFuncTypeLock);
+    void writeVarInFuncParametersType(vector<string> paramTypes, bool& varInFuncTypeLock);
 
     void writeParameters(string functionName, vector<string> params);
 
     void writeFunctionParameters(vector<string> params);
 
-    void writeVarInFuncParameters(vector<string> params, bool varInFuncLock);
+    void writeVarInFuncParameters(vector<string> params, bool& varInFuncLock);
 
     void writeMainConstraints(vector<string>& constraints);
 

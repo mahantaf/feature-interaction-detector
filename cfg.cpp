@@ -41,6 +41,8 @@
 #include <exception>
 
 #include "include/FileSystem/FileSystem.h"
+#include "include/SymbolTable/SymbolTable.h"
+#include "include/Transpiler/Transpiler.h"
 
 using namespace std;
 using namespace llvm;
@@ -106,262 +108,6 @@ string getStatementString(const clang::Stmt* stmt) {
                                                       clang::LangOptions());
 
     return ref.str();
-}
-
-class SymbolTable {
-public:
-    static SymbolTable *getInstance() {
-        if (!instance)
-            instance = new SymbolTable;
-        return instance;
-    }
-
-    string addVariableSymbol(string var, string type) {
-        /**
-         * Description
-         * 1. If variable symbol has not been generated yet
-         *      If the variable type is not LVALUE -> create new symbol
-         * 2. If variable symbol has been generated yet
-         *      If type is not LVALUE -> get its last symbol
-         * 3. If variable symbol has been generated yet
-         *      If type is LVALUE
-         *          If last type is not LVALUE -> get its last symbol
-         * 4. If variable symbol has been generated yet
-         *      If type is LVALUE
-         *          If last type is LVALUE -> create new symbol
-         */
-        string varSymbol = "";
-        if ((this->type.compare("RETURN") == 0 || this->type.compare("FUNCTION") == 0)) {
-            if (this->isInParams(var) != -1) {
-                int paramIndex = this->isInParams(var);
-                string passParam = this->passParams[paramIndex];
-                string passParamType = this->passParamTypes[paramIndex];
-
-                if (this->isLiteral(passParamType)) {
-                    varSymbol = passParam;
-                    setVariableSymbol(var, varSymbol);
-                } else {
-                    string copyType = this->type;
-                    this->type = "";
-                    varSymbol = addVariableSymbol(passParam, type);
-                    setVariableSymbol(var, varSymbol);
-                    this->type = copyType;
-                }
-            } else if (this->isMemberVariable(var)) {
-                string copyType = this->type;
-                this->type = "";
-                varSymbol = addVariableSymbol(var, type);
-                setVariableSymbol(var, varSymbol);
-                this->type = copyType;
-            } else {
-                Context *context = context->getInstance();
-                var = incidentType.compare("VARWRITE") == 0 ? var + "_" + context->getCurrentFunction() : var + "_" + functionName;
-                if (this->getVariableSymbols(var).size() == 0) {
-                    if (type.compare("LVALUE"))
-                        varSymbol = this->insertNewSymbol(var);
-                    if (type.compare("IVALUE") == 0)
-                        this->insertNewSymbol(var);
-                } else {
-                    varSymbol = this->getVariableLastSymbol(var);
-                    if (type.compare("LVALUE") == 0 || type.compare("IVALUE") == 0)
-                        this->insertNewSymbol(var);
-                }
-            }
-        } else {
-            if (this->getVariableSymbols(var).size() == 0) {
-                if (type.compare("LVALUE"))
-                    varSymbol = this->insertNewSymbol(var);
-                if (type.compare("IVALUE") == 0)
-                    this->insertNewSymbol(var);
-            } else {
-                varSymbol = this->getVariableLastSymbol(var);
-                if (type.compare("LVALUE") == 0 || type.compare("IVALUE") == 0)
-                    this->insertNewSymbol(var);
-            }
-        }
-
-        return varSymbol;
-    }
-
-    map<string, pair<set<string>, string>> getTable() {
-        return this->symbolTable;
-    }
-
-    void setTable(map<string, pair<set<string>, string>> table) {
-        this->symbolTable = table;
-    }
-
-    void setType(string type) {
-        this->type = type;
-    }
-
-    void setParams(vector<string> params) {
-        this->params = params;
-    }
-
-    void setPassParams(vector<string> passParams) {
-        this->passParams = passParams;
-    }
-
-    void saveState() {
-        this->fs.writeSymbolTable(this->symbolTable);
-    }
-
-    void saveParameters(string functionName, vector<string> parameters) {
-        vector<string> passParameters;
-        for (string p : parameters) {
-            int paramIndex = this->isInParams(p);
-            if (paramIndex != -1) {
-                passParameters.push_back(this->passParams[paramIndex]);
-            } else {
-                passParameters.push_back(p);
-            }
-        }
-        this->fs.writeParameters(functionName, passParameters);
-    }
-
-    void saveParameterTypes(string functionName, vector<string> parameters, vector<string> parameterTypes) {
-        vector<string> passParameterTypes;
-        for (vector<string>::iterator p = parameters.begin(); p != parameters.end(); ++p) {
-            int paramIndex = this->isInParams(*p);
-            if (paramIndex != -1) {
-                passParameterTypes.push_back(this->passParamTypes[paramIndex]);
-            } else {
-                passParameterTypes.push_back(parameterTypes[p - parameters.begin()]);
-            }
-        }
-        this->fs.writeParametersType(functionName, passParameterTypes);
-    }
-
-    void loadParameterTypes(string functionName) {
-        this->passParamTypes = this->fs.readParameterTypes(functionName);
-    }
-
-    void loadParameters(string functionName) {
-        this->passParams = this->fs.readParameters(functionName);
-    }
-
-    void loadFunctionParameterTypes() {
-        this->passParamTypes = this->fs.readFunctionParameterTypes();
-    }
-
-    void loadFunctionParameters() {
-        this->passParams = this->fs.readFunctionParameters();
-    }
-
-    void loadState() {
-        this->symbolTable = this->fs.readSymbolTable();
-    }
-
-    void print() {
-        for (map<string, pair<set<string>, string>>::const_iterator it = symbolTable.begin(); it != symbolTable.end(); ++it) {
-            cout << it->first << ": (";
-            pair<set<string>, string> symbols = it->second;
-            for (string s: symbols.first) {
-                cout << s << ' ';
-            }
-            cout << ") " << symbols.second << endl;
-        }
-    }
-
-protected:
-    string insertNewSymbol(string variable) {
-//        if (this->type.compare("RETURN") == 0 || this->type.compare("FUNCTION") == 0) {
-//            this->symbol = "ref";
-//        }
-        set<string> variableSymbols = this->getVariableSymbols(variable);
-        string s = variable + "_" + this->symbol + to_string(variableSymbols.size());
-        variableSymbols.insert(s);
-        this->setVariableSymbols(variable, variableSymbols);
-        this->symbol = "s";
-        return s;
-    }
-
-    string getVariableLastSymbol(string variable) {
-        set<string> variableSymbols = this->getVariableSymbols(variable);
-        return *--variableSymbols.end();
-    }
-
-    set<string> getVariableSymbols(string variable) {
-        return this->symbolTable[variable].first;
-    }
-
-    bool isMemberVariable(string variable) {
-        if (variable.find("this->") != string::npos)
-            return true;
-        return false;
-    }
-
-    bool isLiteral(string variableType) {
-        if (variableType.find("Literal") != string::npos)
-            return true;
-        return false;
-    }
-
-    int isInParams(string variable) {
-        for (int i = 0; i < params.size(); ++i)
-            if (params[i].compare(variable) == 0)
-                return i;
-        return -1;
-    }
-
-    void setVariableSymbol(string variable, string symbol) {
-        set<string> variableSymbols = this->getVariableSymbols(variable);
-        variableSymbols.insert(symbol);
-        this->symbolTable[variable].first = variableSymbols;
-    }
-
-    void setVariableSymbols(string variable, set<string> symbols) {
-        this->symbolTable[variable].first = symbols;
-    }
-private:
-    SymbolTable() {
-        this->fs = FileSystem();
-        map<string, pair<set<string>, string>> st;
-        symbol = "s";
-        symbolTable = st;
-    }
-    FileSystem fs;
-    string type;
-    vector<string> params;
-    vector<string> passParams;
-    vector<string> passParamTypes;
-    static SymbolTable *instance;
-    string symbol;
-    map<string, pair<set<string>, string>> symbolTable;
-};
-
-vector<string> split(string s, char delimiter) {
-    vector <string> substrings;
-    string word = "";
-    for (auto x : s) {
-        if (x == delimiter) {
-            substrings.push_back(word);
-            word = "";
-        } else {
-            word = word + x;
-        }
-    }
-    substrings.push_back(word);
-    return substrings;
-}
-
-set<pair<string, string>> findPairsWithSameFirst(set<pair<string, string>> vars) {
-    set<pair<string, string>> duplicatePairs;
-    for (set<pair<string, string>>::iterator i = vars.begin(); i != vars.end(); ++i) {
-        pair<string, string> selector = *i;
-        int num = 0;
-        for (set<pair<string, string>>::iterator j = i; j != vars.end(); ++j) {
-            num++;
-            if (selector.first.compare((*j).first) == 0 && selector.second.compare((*j).second)) {
-                pair<string, string> duplicate = *j;
-                --j;
-                duplicatePairs.insert(duplicate);
-                vars.erase(duplicate);
-            }
-        }
-    }
-    return duplicatePairs;
 }
 
 class Incident {
@@ -844,7 +590,7 @@ void getStmtOperands(const clang::Stmt* stmt, set<pair<string, string>>& operand
         if (type.compare("")) {
             if (stmtClass.compare("DeclRefExpr") == 0) {
                 string declType = cast<clang::DeclRefExpr>(stmt)->getDecl()->getType().getAsString();
-                vector<string> splitDecl = split(declType, ' ');
+                vector<string> splitDecl = Transpiler::split(declType, ' ');
                 string exactDeclType = splitDecl[0];
                 if (exactDeclType.compare("enum") == 0) {
                     return;
@@ -986,116 +732,6 @@ public:
     }
 private:
     vector<string> constraints;
-};
-
-class Transpiler {
-public:
-    Transpiler() {}
-
-    void replaceVariables(string& stmt, set<pair<string, string>>& vars) {
-        for (pair<string, string> p: vars) {
-            regex e(p.first + "((?=\\W)|$)");
-            stmt = regex_replace(stmt, e, p.second);
-        }
-        for (pair<string, string> p: vars) {
-            regex em("->");
-            stmt = regex_replace(stmt, em, "_");
-        }
-    }
-    void replaceDeclaration(string& statement) {
-        regex e("^\\S*\\s");
-        statement = regex_replace(statement, e, "");
-        regex sem(";");
-        statement = regex_replace(statement, sem, "");
-    }
-
-    void replaceReturnStatement(string& statement) {
-        regex e("return\\s");
-        statement = regex_replace(statement, e, "");
-    }
-
-    string replaceFunctionCallByReturnValue(string& statement, string& functionName, string& returnValue) {
-        regex e("(this->)*" + functionName + "\\((.*)\\)");
-        return regex_replace(statement, e, returnValue);
-    }
-
-    void replaceCompoundAssignment(string& statement) {
-        string lhs = "";
-        string rhs = "";
-        string op = "";
-        bool seen = false;
-
-        for (auto x : statement) {
-            if (seen) {
-                rhs += x;
-            } else if (x == '+' || x == '-' || x == '*' || x == '/') {
-                op += x;
-            } else if (x == '=') {
-                seen = true;
-            } else {
-                lhs += x;
-            }
-        }
-        statement = lhs + "= " + lhs + op + rhs;
-    }
-
-    void replaceStaticSingleAssignment(
-            string& statement,
-            set<pair<string, string>>& operands,
-            set<pair<string, string>>& duplicate
-    ) {
-
-        vector<string> splitStatement = split(statement, '=');
-        string lhs = splitStatement[0], rhs = splitStatement[1];
-
-        this->replaceVariables(lhs, operands);
-        this->replaceVariables(rhs, duplicate);
-
-        statement = lhs + "=" + rhs;
-    }
-
-    void replaceStatement(string& statement, string& statementClass, set<pair<string, string>>& operands) {
-        if (statementClass.compare("DeclStmt") == 0)
-            this->replaceDeclaration(statement);
-
-        if (statementClass.compare("ReturnStmt") == 0)
-            this->replaceReturnStatement(statement);
-
-        if (statementClass.compare("CompoundAssignOperator") == 0)
-            this->replaceCompoundAssignment(statement);
-
-        if (operands.size()) {
-            set<pair<string, string>> duplicate = findPairsWithSameFirst(operands);
-            if (duplicate.size())
-                return this->replaceStaticSingleAssignment(statement, operands, duplicate);
-            return this->replaceVariables(statement, operands);
-        }
-    }
-
-    string replaceFunction(
-            string& statement,
-            string& statementClass,
-            string& functionName,
-            string& returnValue,
-            set<pair<string, string>>& operands) {
-
-        if (statementClass.compare("DeclStmt") == 0)
-            this->replaceDeclaration(statement);
-
-        if (statementClass.compare("CompoundAssignOperator") == 0)
-            this->replaceCompoundAssignment(statement);
-
-        string replacedStatement = this->replaceFunctionCallByReturnValue(statement, functionName, returnValue);
-
-        if (operands.size()) {
-            set<pair<string, string>> duplicate = findPairsWithSameFirst(operands);
-            if (duplicate.size())
-                this->replaceStaticSingleAssignment(replacedStatement, operands, duplicate);
-            else
-                this->replaceVariables(replacedStatement, operands);
-        }
-        return replacedStatement;
-    }
 };
 
 class CFGBlockHandler {
@@ -1558,11 +1194,8 @@ public:
             const clang::SourceManager *SM = Result.SourceManager;
             if (SM->isInMainFile(SL)) {
 
-                string functionName = Function->getNameInfo().getAsString();
-                context->setCurrentFunction(functionName);
-                cout << "------------" << functionName << "------------" << endl;
-
                 SymbolTable *se = se->getInstance();
+                se->setFunctionName(Function->getNameInfo().getAsString());
                 se->loadState();
 
                 vector <string> params;
@@ -1728,6 +1361,7 @@ int main(int argc, const char **argv) {
 
     SymbolTable* se = se->getInstance();
     se->loadState();
+    se->setFunctionName(functionName);
     executeAction(argc, argv);
     se->saveState();
 

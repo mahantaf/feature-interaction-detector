@@ -194,7 +194,7 @@ void FileSystem::writeFunctionParametersType(vector<string> paramTypes) {
     return this->writeConstraints(paramTypes, file);
 }
 
-void FileSystem::writeVarInFuncParametersType(vector<string> paramTypes, bool varInFuncTypeLock) {
+void FileSystem::writeVarInFuncParametersType(vector<string> paramTypes, bool& varInFuncTypeLock) {
     string fileName = this->folder + this->functionParameterTypesFile;
     if (varInFuncTypeLock) {
         ofstream file(fileName, ios_base::app);
@@ -218,7 +218,7 @@ void FileSystem::writeFunctionParameters(vector<string> params) {
     return this->writeConstraints(params, file);
 }
 
-void FileSystem::writeVarInFuncParameters(vector<string> params, bool varInFuncLock) {
+void FileSystem::writeVarInFuncParameters(vector<string> params, bool& varInFuncLock) {
     string fileName = this->folder + this->functionParametersFile;
     if (varInFuncLock) {
         ofstream file (fileName, ios_base::app);

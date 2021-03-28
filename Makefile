@@ -25,7 +25,7 @@ CLANG_LIBS := \
 
 LIBS := $(CLANG_LIBS) `llvm-config --libs --system-libs`
 
-all: file_system cfg main clear
+all: file_system symbol_table transpiler cfg main clear
 
 .phony: clean
 .phony: run
@@ -34,10 +34,14 @@ clean:
 	rm $(TARGET) || echo -n ""
 
 cfg:  $(TARGET).cpp
-	$(CXX) -c $(HEADERS) $(LDFLAGS) $(CXXFLAGS) $(TARGET).cpp $(LIBS)
+	$(CXX) -c $(HEADERS) $(LDFLAGS) $(CXXFLAGS) $(TARGET).cpp
 file_system: include/FileSystem/FileSystem.cpp
 	$(CXX) -c include/FileSystem/FileSystem.cpp
+symbol_table: include/SymbolTable/SymbolTable.cpp
+	$(CXX) -c include/SymbolTable/SymbolTable.cpp
+transpiler: include/Transpiler/Transpiler.cpp
+	$(CXX) -c include/Transpiler/Transpiler.cpp
 main:
-	$(CXX) $(HEADERS) $(LDFLAGS) $(CXXFLAGS) FileSystem.o cfg.o -o cfg $(LIBS)
+	$(CXX) $(HEADERS) $(LDFLAGS) $(CXXFLAGS) FileSystem.o SymbolTable.o Transpiler.o cfg.o -o cfg $(LIBS)
 clear:
 	rm *.o
