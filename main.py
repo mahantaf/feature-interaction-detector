@@ -96,7 +96,6 @@ class FileSystem:
         parameter_file.close()
 
 
-
 def read_commands_from_file():
     command_group = []
     commands = []
@@ -264,9 +263,6 @@ for i, group in enumerate(groups):
         constraints = run_command_lists(command_lists)
         os.makedirs("output/" + str(i) + "/" + str(j))
         fs.write_main_constraints("output/" + str(i) + "/" + str(j) + "/constraints.txt", command_string, constraints)
-
-
-
 
 # command_groups = make_command_group(read_commands_from_file())
 # for i, group in enumerate(command_groups):
