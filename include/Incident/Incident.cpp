@@ -36,7 +36,6 @@ WriteIncident::WriteIncident(string incident) : Incident(incident, "WRITE") {}
 bool WriteIncident::hasIncident(const clang::Stmt* stmt, vector<string>& incidentValues) {
   const string stmtClass(stmt->getStmtClassName());
   if (stmtClass.compare("BinaryOperator") == 0) {
-//            cout << getStatementString(stmt) << endl;
     const clang::BinaryOperator* binaryOperator = cast<clang::BinaryOperator>(stmt);
     if (binaryOperator->isAssignmentOp()) {
       const clang::Stmt* lhs = binaryOperator->getLHS();
@@ -256,7 +255,7 @@ bool VarWriteIncident::hasIncident(const clang::Stmt *stmt, vector<string> &inci
     lhsVar = this->getDeclStatementLHSVariable(stmt);
     this->getDeclStatementRHSVariables(stmt, variables);
   }
-  return lhsVar.compare(incident) == 0 && hasVariable(functionName, variables);
+  return lhsVar.compare(this->incident) == 0 && hasVariable(functionName, variables);
 }
 
 bool VarWriteIncident::hasIncidentExtend(const clang::Stmt* stmt) {

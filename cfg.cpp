@@ -722,7 +722,6 @@ public:
 
                 SymbolTable *se = se->getInstance();
                 se->setFunctionName(Function->getNameInfo().getAsString());
-                context->setCurrentFunction(Function->getNameInfo().getAsString());
                 se->loadState();
 
                 vector <string> params;
