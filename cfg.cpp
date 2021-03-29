@@ -40,9 +40,12 @@
 #include <thread>
 #include <exception>
 
+#include "include/Context/Context.h"
+#include "include/Incident/Incident.h"
 #include "include/FileSystem/FileSystem.h"
-#include "include/SymbolTable/SymbolTable.h"
 #include "include/Transpiler/Transpiler.h"
+#include "include/SymbolTable/SymbolTable.h"
+#include "include/StatementHandler/StatementHandler.h"
 
 using namespace std;
 using namespace llvm;
@@ -53,448 +56,6 @@ int varInFuncCounter = 0;
 bool varInFuncLock = false;
 bool varInFuncTypeLock = false;
 
-class Context {
-public:
-
-    static Context *getInstance() {
-        if (!instance)
-            instance = new Context;
-        return instance;
-    }
-
-    clang::ast_matchers::MatchFinder::MatchResult* getContext() {
-        return this->context;
-    }
-
-    vector<vector<string>> getInitialConstraintsList() {
-        return this->initialConstraintsList;
-    }
-
-    bool getConstraintsListSet() {
-        return this->constraintsListSet;
-    }
-
-    string getCurrentFunction() {
-        return this->currentFunction;
-    }
-
-    void setContext(clang::ast_matchers::MatchFinder::MatchResult context) {
-        this->context = &context;
-    }
-
-    void setInitialConstraintsList(vector<vector<string>> initialConstraintsList) {
-        this->initialConstraintsList = initialConstraintsList;
-        this->constraintsListSet = true;
-    }
-
-    void setCurrentFunction(string currentFunction) {
-        this->currentFunction = currentFunction;
-    }
-
-private:
-    Context() { this->constraintsListSet = false; }
-    static Context *instance;
-    clang::ast_matchers::MatchFinder::MatchResult* context;
-    vector<vector<string>> initialConstraintsList;
-    bool constraintsListSet;
-    string currentFunction;
-};
-
-string getStatementString(const clang::Stmt* stmt) {
-    Context *context = context->getInstance();
-    clang::SourceRange range = stmt->getSourceRange();
-    const clang::SourceManager *SM = context->getContext()->SourceManager;
-    llvm::StringRef ref = clang::Lexer::getSourceText(clang::CharSourceRange::getTokenRange(range), *SM,
-                                                      clang::LangOptions());
-
-    return ref.str();
-}
-
-class Incident {
-public:
-    Incident(string incident, string type) : incident(incident), type(type) {}
-
-    virtual bool hasIncident(const clang::Stmt* stmt, vector<string>& incidentValues) = 0;
-
-    virtual void print() = 0;
-
-    string getType() {
-        return this->type;
-    }
-
-protected:
-    string incident;
-    string type;
-};
-
-class CallIncident : public Incident {
-public:
-    CallIncident(string incident) : Incident(incident, "CALL") {}
-
-    bool hasIncident(const clang::Stmt *stmt, vector <string> &incidentValues) {
-        const string stmtClass(stmt->getStmtClassName());
-        if (stmtClass.compare("CallExpr") == 0 || stmtClass.compare("CXXMemberCallExpr") == 0) {
-            const clang::FunctionDecl *functionDecl = cast<clang::CallExpr>(stmt)->getDirectCallee();
-            if (functionDecl) {
-              string stmtString = functionDecl->getNameInfo().getAsString();
-              if (stmtString.compare(this->incident) == 0)
-                return true;
-            }
-        }
-        return false;
-    }
-
-    void print() {
-        cout << "Call Incident" << endl;
-    }
-};
-
-class WriteIncident: public Incident {
-public:
-    WriteIncident(string incident) : Incident(incident, "WRITE") {}
-
-    bool hasIncident(const clang::Stmt* stmt, vector<string>& incidentValues) {
-        const string stmtClass(stmt->getStmtClassName());
-        if (stmtClass.compare("BinaryOperator") == 0) {
-//            cout << getStatementString(stmt) << endl;
-            const clang::BinaryOperator* binaryOperator = cast<clang::BinaryOperator>(stmt);
-            if (binaryOperator->isAssignmentOp()) {
-                const clang::Stmt* lhs = binaryOperator->getLHS();
-
-                string stmtString;
-                string lhsStmtClass(lhs->getStmtClassName());
-
-                if (lhsStmtClass.compare("MemberExpr") == 0) {
-                    stmtString = cast<clang::MemberExpr>(lhs)->getMemberNameInfo().getAsString();
-                } else {
-                    stmtString = getStatementString(lhs);
-                }
-
-                if (stmtString.compare(this->incident) == 0)
-                    return true;
-            }
-        }
-        return false;
-    }
-
-    void print() {
-        cout << "Write Incident" << endl;
-    }
-};
-
-class ReturnIncident: public Incident {
-public:
-    ReturnIncident(string incident) : Incident(incident, "RETURN") {}
-
-    bool hasIncident(const clang::Stmt* stmt, vector<string>& incidentValues) {
-        const string stmtClass(stmt->getStmtClassName());
-        if (stmtClass.compare("ReturnStmt") == 0) {
-            return true;
-        }
-        return false;
-    }
-
-    void print() {
-        cout << "Return Incident" << endl;
-    }
-
-private:
-
-};
-
-class FunctionIncident : public Incident {
-public:
-    FunctionIncident(string incident) : Incident(incident, "FUNCTION") {}
-
-    vector<string> getParams() {
-        return this->params;
-    }
-
-    vector<string> getParamTypes() {
-        return this->paramTypes;
-    }
-
-    void setParamsAndParamTypes(const clang::Stmt* stmt) {
-
-        const clang::CallExpr* callExpr = cast<clang::CallExpr>(stmt);
-        const clang::Expr* const* args = callExpr->getArgs();
-
-        for (unsigned int i = 0; i < callExpr->getNumArgs(); ++i) {
-            this->params.push_back(getStatementString(args[i]));
-            this->paramTypes.push_back(args[i]->getStmtClassName());
-        }
-    }
-
-    bool hasIncident(const clang::Stmt* stmt, vector<string>& incidentValues) {
-        const string stmtClass(stmt->getStmtClassName());
-        if (stmtClass.compare("CallExpr") == 0 || stmtClass.compare("CXXMemberCallExpr") == 0) {
-
-            const clang::CallExpr* callExpr = cast<clang::CallExpr>(stmt);
-            const clang::FunctionDecl *functionDecl = cast<clang::CallExpr>(stmt)->getDirectCallee();
-
-            if (functionDecl) {
-                string stmtString = functionDecl->getNameInfo().getAsString();
-                if (stmtString.compare(this->incident) == 0) {
-                    const clang::Expr* const* args = callExpr->getArgs();
-
-                    for (unsigned int i = 0; i < callExpr->getNumArgs(); ++i) {
-                        this->params.push_back(getStatementString(args[i]));
-                        this->paramTypes.push_back(args[i]->getStmtClassName());
-                    }
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    void print() {
-
-    }
-
-private:
-    vector<string> params;
-    vector<string> paramTypes;
-};
-
-class VarInFuncIncident: public Incident {
-public:
-    VarInFuncIncident(string incident) : Incident(incident, "VARINFFUNC") {}
-
-    vector<string> getParams() {
-        return this->params;
-    }
-
-    vector<string> getParamTypes() {
-        return this->paramTypes;
-    }
-
-    bool hasIncident(const clang::Stmt *stmt, vector <string> &incidentValues) {
-        return true;
-    }
-
-    int hasIncidentExtend(const clang::Stmt *stmt, vector<const clang::Stmt*> &incidentValues) {
-        const clang::IfStmt *ifStmt = cast<clang::IfStmt>(stmt);
-
-        set<string> variables;
-        const clang::Stmt* conditionStatement = ifStmt->getCond();
-        this->getConditionVariables(conditionStatement, variables);
-
-        if (hasVariable(variables)) {
-            const clang::Stmt* thenStatement = ifStmt->getThen();
-            const clang::Stmt* elseStatement = ifStmt->getElse();
-
-            if (thenStatement && this->hasCall(thenStatement)) {
-                incidentValues.push_back(conditionStatement);
-                return 1;
-            }
-            if (elseStatement && this->hasCall(elseStatement)) {
-                incidentValues.push_back(conditionStatement);
-                return 0;
-            }
-        }
-        return -1;
-    };
-
-    bool hasCall(const clang::Stmt* stmt) {
-        CallIncident callIncident(this->incident);
-        vector <string> incidentValues;
-        for (clang::ConstStmtIterator it = stmt->child_begin(); it != stmt->child_end(); it++) {
-            const clang::Stmt* child = (*it);
-            if (callIncident.hasIncident(child, incidentValues)) {
-                FunctionIncident functionIncident(this->incident);
-                functionIncident.setParamsAndParamTypes(child);
-                this->params = functionIncident.getParams();
-                this->paramTypes = functionIncident.getParamTypes();
-                return true;
-            }
-        }
-        if (callIncident.hasIncident(stmt, incidentValues)) {
-            FunctionIncident functionIncident(this->incident);
-            functionIncident.setParamsAndParamTypes(stmt);
-            this->params = functionIncident.getParams();
-            this->paramTypes = functionIncident.getParamTypes();
-            return true;
-        }
-        return false;
-    }
-
-    bool hasVariable(set<string>& variables) {
-        for (string variable: variables)
-            if (variable.compare(functionName) == 0)
-                return true;
-        return false;
-    }
-
-    void getConditionVariables(const clang::Stmt* stmt, set<string>& variables) {
-        const string stmtClass(stmt->getStmtClassName());
-        if (stmtClass.compare("ParenExpr") == 0) {
-
-            const clang::ParenExpr *parenExpr = cast<clang::ParenExpr>(stmt);
-            const clang::Stmt *subParen = parenExpr->getSubExpr();
-            getConditionVariables(subParen, variables);
-
-        } else if (stmtClass.compare("BinaryOperator") == 0) {
-
-            const clang::BinaryOperator *binaryOperator = cast<clang::BinaryOperator>(stmt);
-            const clang::Stmt *lhs = binaryOperator->getLHS();
-            const clang::Stmt *rhs = binaryOperator->getRHS();
-            getConditionVariables(lhs, variables);
-            getConditionVariables(rhs, variables);
-
-        } else if (stmtClass.compare("UnaryOperator") == 0) {
-
-            const clang::Stmt *subExpr = cast<clang::UnaryOperator>(stmt)->getSubExpr();
-            getConditionVariables(subExpr, variables);
-
-        } else if (stmtClass.compare("ImplicitCastExpr") == 0) {
-
-            const clang::Stmt *subExpr = cast<clang::ImplicitCastExpr>(stmt)->getSubExpr();
-            getConditionVariables(subExpr, variables);
-
-        } else if (stmtClass.compare("MemberExpr") == 0) {
-
-            variables.insert(cast<clang::MemberExpr>(stmt)->getMemberNameInfo().getAsString());
-
-        } else if (stmtClass.compare("DeclRefExpr") == 0) {
-            variables.insert(getStatementString(stmt));
-        }
-    }
-
-    void print() {
-        cout << "VarInFunc Incident" << endl;
-    }
-private:
-    vector<string> params;
-    vector<string> paramTypes;
-};
-
-class VarWriteIncident: public Incident {
-public:
-    VarWriteIncident(string incident) : Incident(incident, "VARWRITE") {}
-
-    bool hasIncident(const clang::Stmt *stmt, vector<string> &incidentValues) {
-        const string stmtClass(stmt->getStmtClassName());
-        string lhsVar = "";
-        set<string> variables;
-
-        if (stmtClass.compare("BinaryOperator") == 0 || stmtClass.compare("CompoundAssignOperator") == 0) {
-            const clang::BinaryOperator *binaryOperator = cast<clang::BinaryOperator>(stmt);
-            const clang::Stmt *lhs = binaryOperator->getLHS();
-            const clang::Stmt *rhs = binaryOperator->getRHS();
-
-            lhsVar = this->getBinaryOperatorLHSVariable(lhs);
-            this->getBinaryOperatorRHSVariables(rhs, variables);
-
-        } else if (stmtClass.compare("DeclStmt") == 0) {
-            lhsVar = this->getDeclStatementLHSVariable(stmt);
-            this->getDeclStatementRHSVariables(stmt, variables);
-        }
-        return lhsVar.compare(incident) == 0 && hasVariable(functionName, variables);
-    }
-
-    bool hasIncidentExtend(const clang::Stmt* stmt) {
-        const string stmtClass(stmt->getStmtClassName());
-        string lhsVar = "";
-        set<string> variables;
-
-        if (stmtClass.compare("BinaryOperator") == 0 || stmtClass.compare("CompoundAssignOperator") == 0) {
-            const clang::BinaryOperator *binaryOperator = cast<clang::BinaryOperator>(stmt);
-            const clang::Stmt *lhs = binaryOperator->getLHS();
-            const clang::Stmt *rhs = binaryOperator->getRHS();
-
-            lhsVar = this->getBinaryOperatorLHSVariable(lhs);
-            this->getBinaryOperatorRHSVariables(rhs, variables);
-
-        } else if (stmtClass.compare("DeclStmt") == 0) {
-            lhsVar = this->getDeclStatementLHSVariable(stmt);
-            this->getDeclStatementRHSVariables(stmt, variables);
-        }
-        return lhsVar.compare(incident) == 0 && hasVariable(functionName, variables);
-    }
-
-    bool hasVariable(string variable, set<string>& variables) {
-        for (string var : variables)
-            if (var.compare(variable) == 0)
-                return true;
-        return false;
-    }
-
-    void getBinaryOperatorRHSVariables(const clang::Stmt* stmt, set<string>& variables) {
-        const string stmtClass(stmt->getStmtClassName());
-        if (stmtClass.compare("ParenExpr") == 0) {
-            const clang::ParenExpr *parenExpr = cast<clang::ParenExpr>(stmt);
-            const clang::Stmt *subParen = parenExpr->getSubExpr();
-            getBinaryOperatorRHSVariables(subParen, variables);
-
-        } else if (stmtClass.compare("BinaryOperator") == 0) {
-
-            const clang::BinaryOperator *binaryOperator = cast<clang::BinaryOperator>(stmt);
-            const clang::Stmt *lhs = binaryOperator->getLHS();
-            const clang::Stmt *rhs = binaryOperator->getRHS();
-            getBinaryOperatorRHSVariables(lhs, variables);
-            getBinaryOperatorRHSVariables(rhs, variables);
-
-        } else if (stmtClass.compare("UnaryOperator") == 0) {
-
-            const clang::Stmt *subExpr = cast<clang::UnaryOperator>(stmt)->getSubExpr();
-            getBinaryOperatorRHSVariables(subExpr, variables);
-
-        } else if (stmtClass.compare("ImplicitCastExpr") == 0) {
-
-            const clang::Stmt *subExpr = cast<clang::ImplicitCastExpr>(stmt)->getSubExpr();
-            getBinaryOperatorRHSVariables(subExpr, variables);
-
-        } else if (stmtClass.compare("MemberExpr") == 0) {
-
-            variables.insert(cast<clang::MemberExpr>(stmt)->getMemberNameInfo().getAsString());
-
-        } else if (stmtClass.compare("DeclRefExpr") == 0) {
-            variables.insert(getStatementString(stmt));
-        }
-    }
-
-    void getDeclStatementRHSVariables(const clang::Stmt* stmt, set<string>& variables) {
-        const clang::DeclStmt *declStmt = cast<clang::DeclStmt>(stmt);
-        const clang::Decl* declaration = declStmt->getSingleDecl();
-        if (declaration) {
-            const clang::VarDecl* varDecl = cast<clang::VarDecl>(declaration);
-            if (varDecl && varDecl->hasInit()) {
-                const clang::Stmt* rhs = varDecl->getInit();
-                getBinaryOperatorRHSVariables(rhs, variables);
-            }
-        }
-    }
-
-    string getBinaryOperatorLHSVariable(const clang::Stmt* stmt) {
-        const string stmtClass(stmt->getStmtClassName());
-        if (stmtClass.compare("ImplicitCastExpr") == 0) {
-            const clang::Stmt *subExpr = cast<clang::ImplicitCastExpr>(stmt)->getSubExpr();
-            return getBinaryOperatorLHSVariable(subExpr);
-        } else if (stmtClass.compare("MemberExpr") == 0) {
-            return cast<clang::MemberExpr>(stmt)->getMemberNameInfo().getAsString();
-        } else if (stmtClass.compare("DeclRefExpr") == 0) {
-            return getStatementString(stmt);
-        }
-    }
-
-    string getDeclStatementLHSVariable(const clang::Stmt* stmt) {
-        const clang::DeclStmt *declStmt = cast<clang::DeclStmt>(stmt);
-        const clang::Decl* declaration = declStmt->getSingleDecl();
-        if (declaration) {
-            const clang::VarDecl *varDecl = cast<clang::VarDecl>(declaration);
-            if (varDecl && varDecl->hasInit()) {
-                const clang::Stmt *rhs = varDecl->getInit();
-                return varDecl->getNameAsString();
-            }
-        }
-    }
-
-    void print() {
-        cout << "VarWrite Incident" << endl;
-    }
-
-};
 
 Incident* createIncident() {
     if (incidentType.compare("CALL") == 0) {
@@ -1145,41 +706,6 @@ private:
     vector<const clang::Stmt*> incidentStatements;
 };
 
-class VarWriteHandler {
-public:
-    VarWriteHandler() {
-        this->incident = createIncident();
-    };
-
-    bool findIncidents(const clang::Stmt* stmt) {
-        const string stmtClass(stmt->getStmtClassName());
-        VarWriteIncident* varWriteIncident = dynamic_cast<VarWriteIncident*>(this->incident);
-        return varWriteIncident->hasIncidentExtend(stmt);
-    }
-private:
-    Incident* incident;
-};
-
-class DeclCallBack: public clang::ast_matchers::MatchFinder::MatchCallback {
-public:
-    DeclCallBack() {}
-    void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) {
-        Context *context = context->getInstance();
-        context->setContext(Result);
-
-        const auto* declStmt = Result.Nodes.getNodeAs<clang::Stmt>("declaration");
-        clang::SourceLocation SL = declStmt->getBeginLoc();
-        const clang::SourceManager *SM = Result.SourceManager;
-        if (SM->isInMainFile(SL)) {
-            VarWriteHandler* varWriteHandler = new VarWriteHandler();
-            bool hasIncident = varWriteHandler->findIncidents(declStmt);
-            if (hasIncident) {
-                cout << getStatementString(declStmt);
-            }
-        }
-    }
-};
-
 class VarWriteCallBack : public clang::ast_matchers::MatchFinder::MatchCallback {
 public:
     VarWriteCallBack() {}
@@ -1196,6 +722,7 @@ public:
 
                 SymbolTable *se = se->getInstance();
                 se->setFunctionName(Function->getNameInfo().getAsString());
+                context->setCurrentFunction(Function->getNameInfo().getAsString());
                 se->loadState();
 
                 vector <string> params;
@@ -1248,15 +775,6 @@ public:
                     cfgHandler.findChildStatementIncident(If);
                 return;
             }
-        } else if(incidentType.compare("VARWRITE") == 0) {
-            const auto* binaryStmt = Result.Nodes.getNodeAs<clang::Stmt>("binary");
-
-            clang::SourceLocation SL = binaryStmt->getBeginLoc();
-            const clang::SourceManager *SM = Result.SourceManager;
-            if (SM->isInMainFile(SL)) {
-                VarWriteHandler* varWriteHandler = new VarWriteHandler();
-                varWriteHandler->findIncidents(binaryStmt);
-            }
         } else {
             const auto* Function = Result.Nodes.getNodeAs<clang::FunctionDecl>("fn");
             if (Function->isThisDeclarationADefinition()) {
@@ -1295,7 +813,7 @@ public:
 
 class MyConsumer : public clang::ASTConsumer {
 public:
-    explicit MyConsumer() : handler(), declHandler(), varWriteCallBack(), cfgHandler(nullptr) {
+    explicit MyConsumer() : handler(), varWriteCallBack(), cfgHandler(nullptr) {
         if (incidentType.compare("VARINFFUNC") == 0 || incidentType.compare("VARINFUNCEXTEND") == 0) {
             const auto matching_node = clang::ast_matchers::ifStmt().bind("if");
             match_finder.addMatcher(matching_node, &handler);
@@ -1316,7 +834,6 @@ public:
     }
 private:
     MyCallback handler;
-    DeclCallBack declHandler;
     VarWriteCallBack varWriteCallBack;
     CFGHandler cfgHandler;
     clang::ast_matchers::MatchFinder match_finder;
@@ -1359,10 +876,15 @@ int main(int argc, const char **argv) {
         varInFuncCount = *(&argv[7]);
     }
 
+    Context* context = context->getInstance();
     SymbolTable* se = se->getInstance();
+
     se->loadState();
     se->setFunctionName(functionName);
+    context->setCurrentFunction(functionName);
+
     executeAction(argc, argv);
+
     se->saveState();
 
     return 0;
