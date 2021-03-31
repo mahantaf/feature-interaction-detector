@@ -3,6 +3,7 @@
 //
 
 #include "Incident.h"
+#include "../Context/Context.h"
 
 Incident::Incident(string incident, string type) : incident(incident), type(type) {}
 
@@ -160,7 +161,7 @@ int VarInFuncIncident::hasIncidentExtend(const clang::Stmt *stmt, vector<const c
     }
   }
   return -1;
-};
+}
 
 bool VarInFuncIncident::hasCall(const clang::Stmt* stmt) {
   CallIncident callIncident(this->incident);

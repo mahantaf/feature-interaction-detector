@@ -13,6 +13,8 @@
 
 using namespace std;
 
+class Incident;
+
 class Context {
 public:
 
@@ -26,11 +28,20 @@ public:
 
   string getCurrentFunction();
 
+  Incident* getIncident();
+
+  string getFilePath();
+
   void setContext(clang::ast_matchers::MatchFinder::MatchResult context);
 
   void setInitialConstraintsList(vector<vector<string>> initialConstraintsList);
 
   void setCurrentFunction(string currentFunction);
+
+  void setIncident(Incident* incident);
+
+  void setFilePath(string filePath);
+
 
 private:
   Context();
@@ -39,6 +50,8 @@ private:
   vector<vector<string>> initialConstraintsList;
   bool constraintsListSet;
   string currentFunction;
+  Incident* incident;
+  string filePath;
 };
 
 

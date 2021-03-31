@@ -21,11 +21,12 @@ CLANG_LIBS := \
   -lclangAnalysis \
   -lclangAST \
   -lclangLex \
-  -lclangBasic
+  -lclangBasic \
+  -lstdc++fs
 
 LIBS := $(CLANG_LIBS) `llvm-config --libs --system-libs`
 
-all: file_system symbol_table transpiler context statement_handler incident cfg main clear
+all: path file_system symbol_table transpiler context statement_handler incident cfg_block_handler cfg_handler cfg main clear
 
 .phony: clean
 .phony: run
@@ -35,6 +36,8 @@ clean:
 
 cfg:  $(TARGET).cpp
 	$(CXX) -c $(HEADERS) $(LDFLAGS) $(CXXFLAGS) $(TARGET).cpp
+path: include/Path/Path.cpp
+	$(CXX) -c $(CXXFLAGS) include/Path/Path.cpp
 file_system: include/FileSystem/FileSystem.cpp
 	$(CXX) -c $(CXXFLAGS) include/FileSystem/FileSystem.cpp
 symbol_table: include/SymbolTable/SymbolTable.cpp
@@ -47,7 +50,12 @@ statement_handler: include/StatementHandler/StatementHandler.cpp
 	$(CXX) -c $(HEADERS) $(LDFLAGS) $(CXXFLAGS) include/StatementHandler/StatementHandler.cpp
 incident: include/Incident/Incident.cpp
 	$(CXX) -c $(HEADERS) $(LDFLAGS) $(CXXFLAGS) include/Incident/Incident.cpp
+cfg_block_handler: include/CFGBlockHandler/CFGBlockHandler.cpp
+	$(CXX) -c $(HEADERS) $(LDFLAGS) $(CXXFLAGS) include/CFGBlockHandler/CFGBlockHandler.cpp
+cfg_handler: include/CFGHandler/CFGHandler.cpp
+	$(CXX) -c $(HEADERS) $(LDFLAGS) $(CXXFLAGS) include/CFGHandler/CFGHandler.cpp
 main:
-	$(CXX) $(HEADERS) $(LDFLAGS) $(CXXFLAGS) FileSystem.o SymbolTable.o Transpiler.o Context.o StatementHandler.o Incident.o cfg.o -o cfg $(LIBS)
+	$(CXX) $(HEADERS) $(LDFLAGS) $(CXXFLAGS) Path.o FileSystem.o SymbolTable.o Transpiler.o Context.o \
+	StatementHandler.o Incident.o CFGBlockHandler.o CFGHandler.o cfg.o -o cfg $(LIBS)
 clear:
 	rm *.o

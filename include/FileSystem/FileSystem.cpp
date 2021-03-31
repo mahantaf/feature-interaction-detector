@@ -5,10 +5,10 @@
 #include "FileSystem.h"
 
 FileSystem::FileSystem() {
-//    this->folder = "/home/mahan/Projects/Thesis/feature-interaction-detector/temp/";
-//    this->constraintFile = "/home/mahan/Projects/Thesis/feature-interaction-detector/constraints.txt";
-    this->folder = "/usr/local/Cellar/llvm/11.0.0/cfg2/temp/";
-    this->constraintFile = "/usr/local/Cellar/llvm/11.0.0/cfg2/constraints.txt";
+    this->folder = "/home/mahan/Projects/Thesis/feature-interaction-detector/temp/";
+    this->constraintFile = "/home/mahan/Projects/Thesis/feature-interaction-detector/constraints.txt";
+//    this->folder = "/usr/local/Cellar/llvm/11.0.0/cfg2/temp/";
+//    this->constraintFile = "/usr/local/Cellar/llvm/11.0.0/cfg2/constraints.txt";
     this->returnConstraintFile = "return_constraints.txt";
     this->varWriteConstraintFile = "var_write_constraints.txt";
     this->symbolTableFile = "symbols.txt";

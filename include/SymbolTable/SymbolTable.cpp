@@ -195,7 +195,7 @@ bool SymbolTable::isLiteral(string variableType) {
 }
 
 int SymbolTable::isInParams(string variable) {
-    for (int i = 0; i < params.size(); ++i)
+    for (long unsigned int i = 0; i < params.size(); ++i)
         if (params[i].compare(variable) == 0)
             return i;
     return -1;

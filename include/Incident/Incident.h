@@ -16,11 +16,12 @@
 #include <vector>
 #include <iostream>
 
-#include "../Context/Context.h"
 #include "../StatementHandler/StatementHandler.h"
 
 using namespace std;
 using namespace llvm;
+
+class Context;
 
 class Incident {
 public:
