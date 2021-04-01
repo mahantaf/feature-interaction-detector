@@ -1,7 +1,7 @@
 #  Symbol Table
 
 This class keeps the mapping of variables to its symbols.
-In addition in generates new symbols based on symbolic execution.
+In addition it generates new symbols based on symbolic execution.
 
 Main functions of this class are:
 
@@ -60,7 +60,7 @@ Main functions of this class are:
     **Class Property:**
     
     ```c++
-    // Suppose Class Test has a property with name p 
+    // Suppose Class Test has a property named c 
     // We want to symbolize bar function
     
     void Test::bar() {
@@ -77,13 +77,13 @@ Main functions of this class are:
 2. `setParams()` and `setPassParams()`
     
     These two methods are used to set current function parameters
-    and passed parameters which in order to separate different type
+    and passed parameters in order to separate different type
     of variable.
     
 3. `saveState()` and `loadState()`
     
-    When a function call appears traversing the CFG, we have to 
-    go inside that function and collect the corresponding constraint
+    When a function call appears while traversing the CFG, we have to 
+    go inside that function and collect the corresponding constraints
     of that function. Thus we have to save the current symbol table
     using `saveState()`.
     

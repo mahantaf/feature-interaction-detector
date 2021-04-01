@@ -1,4 +1,4 @@
-# feature-interaction-detector
+# Targeted Symbolic Executor
 
 ## Installation
 
@@ -46,3 +46,4 @@ output/
         ------ 1/
             ------ constraints.txt
 ```
+
