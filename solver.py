@@ -24,16 +24,16 @@ from z3 import *
 this_enable_route_planning_s0 = Bool('this_enable_route_planning_s0')
 nearest_empty = Bool('nearest_empty')
 update_needed_updateRoutePlan_s0 = Bool('update_needed_updateRoutePlan_s0')
-this_first_init_path = Bool('this_first_init_path')
-this_ref_gps_updated_ = Bool('this_ref_gps_updated_')
+this_first_init_path = Int('this_first_init_path')
+this_ref_gps_updated_ = Int('this_ref_gps_updated_')
 
 
 this_ref_gps_flag__s0 = True
 update_needed_updatePath_s4 = False
 update_needed_updatePath_s3 = update_needed_updatePath_s4 + False
 update_needed_updatePath_s2 = update_needed_updatePath_s3 + True
-update_needed_updatePath_s1 = update_needed_updatePath_s2 + True
-update_needed_updatePath_s0 = update_needed_updatePath_s1 + False
+update_needed_updatePath_s1 = update_needed_updatePath_s2 + this_first_init_path
+update_needed_updatePath_s0 = update_needed_updatePath_s1 + this_ref_gps_updated_
 
 s = Solver()
 s.add(
