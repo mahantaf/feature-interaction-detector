@@ -57,12 +57,7 @@ def postfix_to_z3(expression):
     return output
 
 
-
-
-
-expression = input('Enter infix expression: ')
-print('infix expression:', expression)
-postfix = infix_to_postfix(normalize(expression).split())
-print('postfix expression:', postfix)
-z3 = postfix_to_z3(postfix.split())
-print('z3 expression:', z3)
+def convert_to_z3(expression):
+    postfix = infix_to_postfix(normalize(expression).split())
+    z3 = postfix_to_z3(postfix.split())
+    return z3

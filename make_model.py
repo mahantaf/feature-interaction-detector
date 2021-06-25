@@ -1,4 +1,5 @@
 import os
+from postfix import convert_to_z3
 
 file = open("sample.txt", 'r')
 file_lines = file.readlines()
@@ -145,7 +146,9 @@ generated_file.write(os.linesep)
 generated_file.write("s = Solver()" + os.linesep)
 generated_file.write("s.add(" + os.linesep)
 for s in statements:
-    generated_file.write("\t{},".format(s["Statement"]).replace(".", "_") + os.linesep)
+    if "||" in s["Statement"] or "&&" in s["Statement"] or "!" in s["Statement"]:
+        s["Statement"] = convert_to_z3(s["Statement"].replace(".", "_").replace("()", ""))
+    generated_file.write("\t{},".format(s["Statement"]).replace(".", "_").replace("()", "") + os.linesep)
 generated_file.write(")" + os.linesep)
 
 generated_file.write(os.linesep)
