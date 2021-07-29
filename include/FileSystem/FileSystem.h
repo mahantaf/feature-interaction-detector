@@ -54,6 +54,8 @@ public:
 
     void writeVarInFuncParameters(vector<string> params, bool& varInFuncLock);
 
+    void writeFunctionFilePath(string filePath);
+
     void writeMainConstraints(vector<string>& constraints);
 
     void writeVarWriteConstraints(vector<string>& constraints);
@@ -70,6 +72,7 @@ private:
     string symbolTableFile;
     string parametersFile;
     string parameterTypesFile;
+    string functionPathFile;
     string functionParametersFile;
     string functionParameterTypesFile;
 };

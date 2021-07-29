@@ -5,15 +5,16 @@
 #include "FileSystem.h"
 
 FileSystem::FileSystem() {
-    this->folder = "/home/mahan/Projects/Thesis/feature-interaction-detector/temp/";
-    this->constraintFile = "/home/mahan/Projects/Thesis/feature-interaction-detector/constraints.txt";
-//    this->folder = "/usr/local/Cellar/llvm/11.0.0/cfg2/temp/";
-//    this->constraintFile = "/usr/local/Cellar/llvm/11.0.0/cfg2/constraints.txt";
+//    this->folder = "/home/mahan/Projects/Thesis/feature-interaction-detector/temp/";
+//    this->constraintFile = "/home/mahan/Projects/Thesis/feature-interaction-detector/constraints.txt";
+    this->folder = "/usr/local/Cellar/llvm/11.0.0/cfg2/temp/";
+    this->constraintFile = "/usr/local/Cellar/llvm/11.0.0/cfg2/constraints.txt";
     this->returnConstraintFile = "return_constraints.txt";
     this->varWriteConstraintFile = "var_write_constraints.txt";
     this->symbolTableFile = "symbols.txt";
     this->parametersFile = "_params.txt";
     this->parameterTypesFile = "_param_types.txt";
+    this->functionPathFile = "path.txt";
     this->functionParametersFile = "params.txt";
     this->functionParameterTypesFile = "param_types.txt";
 }
@@ -230,6 +231,15 @@ void FileSystem::writeVarInFuncParameters(vector<string> params, bool& varInFunc
         ofstream file (fileName, ofstream::out | ofstream::trunc);
         return this->writeConstraints(params, file);
     }
+}
+
+void FileSystem::writeFunctionFilePath(string filePath) {
+  string fileName = this->folder + this->functionPathFile;
+  ofstream file (fileName, ofstream::out | ofstream::trunc);
+  if (file.is_open()) {
+    file << filePath << endl;
+    file.close();
+  }
 }
 
 void FileSystem::writeMainConstraints(vector<string>& constraints) {

@@ -21,8 +21,8 @@ CLANG_LIBS := \
   -lclangAnalysis \
   -lclangAST \
   -lclangLex \
-  -lclangBasic \
-  -lstdc++fs
+  -lclangBasic
+#  -lstdc++fs
 
 LIBS := $(CLANG_LIBS) `llvm-config --libs --system-libs`
 

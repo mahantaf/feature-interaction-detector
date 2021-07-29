@@ -383,3 +383,56 @@ int main(int argc, const char **argv) {
     fs.writeMainConstraints(constraintList);
 }
 
+
+int x = 2;
+
+void H() {
+  return;
+}
+
+void I() {
+  if (x > 2) {
+    H();
+  }
+}
+
+int G(int c) {
+  x = c * 2;
+  return x;
+}
+
+void F() {
+  int a = 2;
+  int b = G(a);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

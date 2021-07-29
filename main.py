@@ -2,7 +2,7 @@ from pprint import pprint
 import re
 import os
 import copy
-
+from postfix import extract_file_path
 
 class FileSystem:
     def __init__(self):
@@ -10,6 +10,7 @@ class FileSystem:
         self.command_file = "Result.txt"
         self.symbol_file = "symbols.txt"
         self.constraint_file = "constraints.txt"
+        self.function_path_file = "path.txt"
         self.function_parameters_file = "params.txt"
         self.function_parameter_types_file = "param_types.txt"
 
@@ -27,6 +28,9 @@ class FileSystem:
 
     def read_constraints(self):
         return self.read_multiple_parameters(self.constraint_file)
+
+    def read_function_path(self):
+        return self.read_path(self.folder + self.function_path_file)
 
     def read_function_parameters(self):
         return self.read_parameters(self.folder + self.function_parameters_file)
@@ -48,6 +52,11 @@ class FileSystem:
 
     def write_constraints(self, constraints):
         self.write_multiple_parameters(self.constraint_file, constraints)
+
+    def read_path(self, file):
+        path = open(file, 'r')
+        lines = path.readlines()
+        return lines[0].strip()
 
     def read_parameters(self, file):
         parameter_file = open(file, 'r')
@@ -124,6 +133,7 @@ def make_command_lists(command_string):
     for i in range(0, len(parsed_command), 2):
         in_var_func = False
         if i + 2 < len(parsed_command):
+            print("PARSED COMMAND: ", parsed_command[i])
             file_name = parser.extract_file_path(parsed_command[i])
             function_name = parser.extract_element_name(parsed_command[i])
             command = parsed_command[i + 1]
@@ -211,13 +221,19 @@ class Parser:
         return command.split(" ")
 
     def extract_element_name(self, name):
-        split_name = name.split("::")
-        return split_name[-1]
+        if "::" in name:
+            split_name = name.split("::")
+            return split_name[-1]
+        return name
 
     def extract_file_path(self, name):
-        split_name = name.split("::")
-        class_name = self.pattern.sub('_', split_name[1]).lower()
-        return "autonomoose_core/" + split_name[0] + "/src/" + class_name + ".cpp"
+        if "::" in name:
+            split_name = name.split("::")
+            class_name = self.pattern.sub('_', split_name[1]).lower()
+            return "autonomoose_core/" + split_name[0] + "/src/" + class_name + ".cpp"
+        file_path = fs.read_function_path()
+        # return extract_file_path(file_path)
+        return None
 
 
 class Command:

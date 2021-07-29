@@ -2,6 +2,7 @@ OPERATORS = {'!', '==', '||', '&&', '+', '-', '*', '/', '(', ')', '^'}  # set of
 
 PRIORITY = {'+': 1, '-': 1, '*': 2, '/': 2, '^': 3, '||': 4, '&&': 5, '==': 6, '!': 7}  # dictionary having priorities
 
+
 def normalize(expression):
     if '!' in expression:
         expression = expression.replace("!", "! ")
@@ -10,6 +11,26 @@ def normalize(expression):
     if ')' in expression:
         expression = expression.replace(")", " )")
     return expression
+
+
+def extract_file_path(path):
+    stack = []
+    output = ''
+    split_path = path.split("/")
+    for el in split_path:
+        if el != "..":
+            stack.append(el)
+        else:
+            stack.pop()
+    index = 0
+    for path_item in stack:
+        if index != len(stack) - 1:
+            output += path_item + "/"
+        else:
+            output += path_item
+        index += 1
+
+    return output
 
 def infix_to_postfix(expression):  # input expression
     stack = []
@@ -30,6 +51,7 @@ def infix_to_postfix(expression):  # input expression
     while stack:
         output += ' ' + stack.pop() + ' '
     return output
+
 
 def postfix_to_z3(expression):
     stack = []

@@ -4,7 +4,7 @@
 
 #include "Transpiler.h"
 
-set<pair<string, string>> findPairsWithSameFirst(set<pair<string, string>> vars) {
+set<pair<string, string>> findPairsWithSameFirst(set<pair<string, string>>& vars) {
     set<pair<string, string>> duplicatePairs;
     for (set<pair<string, string>>::iterator i = vars.begin(); i != vars.end(); ++i) {
         pair<string, string> selector = *i;
@@ -13,9 +13,13 @@ set<pair<string, string>> findPairsWithSameFirst(set<pair<string, string>> vars)
             num++;
             if (selector.first.compare((*j).first) == 0 && selector.second.compare((*j).second)) {
                 pair<string, string> duplicate = *j;
-                --j;
-                duplicatePairs.insert(duplicate);
-                vars.erase(duplicate);
+//                --j;
+                --i;
+//                duplicatePairs.insert(duplicate);
+                duplicatePairs.insert(selector);
+//                vars.erase(duplicate);
+                vars.erase(selector);
+                break;
             }
         }
     }
@@ -93,14 +97,14 @@ void Transpiler::replaceStaticSingleAssignment(
 
     vector<string> splitStatement = this->split(statement, '=');
     string lhs = splitStatement[0], rhs = splitStatement[1];
-
-    this->replaceVariables(lhs, operands);
-    this->replaceVariables(rhs, duplicate);
-
+//    this->replaceVariables(lhs, operands);
+    this->replaceVariables(lhs, duplicate);
+//    this->replaceVariables(rhs, duplicate);
+    this->replaceVariables(rhs, operands);
     statement = lhs + "=" + rhs;
 }
 
-void Transpiler::replaceStatement(string& statement, string& statementClass, set<pair<string, string>>& operands) {
+void Transpiler::replaceStatement(string& statement, string& statementClass, set<pair<string, string>> operands) {
     if (statementClass.compare("DeclStmt") == 0)
         this->replaceDeclaration(statement);
 
@@ -123,7 +127,7 @@ string Transpiler::replaceFunction(
         string& statementClass,
         string& functionName,
         string& returnValue,
-        set<pair<string, string>>& operands) {
+        set<pair<string, string>> operands) {
 
     if (statementClass.compare("DeclStmt") == 0)
         this->replaceDeclaration(statement);
@@ -132,7 +136,6 @@ string Transpiler::replaceFunction(
         this->replaceCompoundAssignment(statement);
 
     string replacedStatement = this->replaceFunctionCallByReturnValue(statement, functionName, returnValue);
-
     if (operands.size()) {
         set<pair<string, string>> duplicate = findPairsWithSameFirst(operands);
         if (duplicate.size())

@@ -54,7 +54,7 @@
 
 using namespace std;
 using namespace llvm;
-namespace fs =  std::experimental::filesystem;
+//namespace fs =  std::experimental::filesystem;
 
 string filePath, functionName, incident, incidentType, root, varInFuncCount;
 
@@ -263,7 +263,8 @@ int main(int argc, const char **argv) {
     context->setCurrentFunction(functionName);
     context->setIncident(createIncident());
 
-    string cwd = string(fs::current_path());
+//    string cwd = string(fs::current_path());
+    string cwd = "/usr/local/Cellar/llvm/11.0.0/cfg2";
 
     context->setFilePath( cwd + "/" + filePath);
 

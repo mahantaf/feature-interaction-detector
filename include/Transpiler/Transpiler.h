@@ -31,9 +31,9 @@ public:
 
     void replaceStaticSingleAssignment(string& statement, set<pair<string, string>>& operands, set<pair<string, string>>& duplicate);
 
-    void replaceStatement(string& statement, string& statementClass, set<pair<string, string>>& operands);
+    void replaceStatement(string& statement, string& statementClass, set<pair<string, string>> operands);
 
-    string replaceFunction(string& statement, string& statementClass, string& functionName, string& returnValue, set<pair<string, string>>& operands);
+    string replaceFunction(string& statement, string& statementClass, string& functionName, string& returnValue, set<pair<string, string>> operands);
 };
 
 

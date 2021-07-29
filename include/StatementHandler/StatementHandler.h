@@ -6,6 +6,7 @@
 #define STATEMENTHANDLER_H
 
 #include <clang/AST/Stmt.h>
+#include <clang/AST/Decl.h>
 #include <clang/Lex/Lexer.h>
 #include <clang/Basic/LangOptions.h>
 #include <clang/Basic/SourceManager.h>
@@ -29,6 +30,8 @@ using namespace std;
 using namespace llvm;
 
 string getStatementString(const clang::Stmt* stmt);
+
+string getFunctionFileName(const clang::FunctionDecl* functionDecl);
 
 bool isInIf(const clang::CFGBlock *block, unsigned int previousBlockId);
 

@@ -87,15 +87,24 @@ vector<string> FunctionIncident::getParamTypes() {
   return this->paramTypes;
 }
 
+string FunctionIncident::getFilePath() {
+  return this->filePath;
+}
+
 void FunctionIncident::setParamsAndParamTypes(const clang::Stmt* stmt) {
 
   const clang::CallExpr* callExpr = cast<clang::CallExpr>(stmt);
-  const clang::Expr* const* args = callExpr->getArgs();
+  const clang::FunctionDecl *functionDecl = cast<clang::CallExpr>(stmt)->getDirectCallee();
 
+  if (functionDecl)
+    this->filePath = getFunctionFileName(functionDecl);
+
+  const clang::Expr* const* args = callExpr->getArgs();
   for (unsigned int i = 0; i < callExpr->getNumArgs(); ++i) {
     this->params.push_back(getStatementString(args[i]));
     this->paramTypes.push_back(args[i]->getStmtClassName());
   }
+
 }
 
 bool FunctionIncident::hasIncident(const clang::Stmt* stmt, vector<string>& incidentValues) {
@@ -105,15 +114,17 @@ bool FunctionIncident::hasIncident(const clang::Stmt* stmt, vector<string>& inci
     const clang::CallExpr* callExpr = cast<clang::CallExpr>(stmt);
     const clang::FunctionDecl *functionDecl = cast<clang::CallExpr>(stmt)->getDirectCallee();
 
+    cout << "DECL IS DEF: " << functionDecl->willHaveBody() << endl;
+
     if (functionDecl) {
       string stmtString = functionDecl->getNameInfo().getAsString();
       if (stmtString.compare(this->incident) == 0) {
         const clang::Expr* const* args = callExpr->getArgs();
-
         for (unsigned int i = 0; i < callExpr->getNumArgs(); ++i) {
           this->params.push_back(getStatementString(args[i]));
           this->paramTypes.push_back(args[i]->getStmtClassName());
         }
+        this->filePath = getFunctionFileName(functionDecl);
         return true;
       }
     }
@@ -134,6 +145,10 @@ vector<string> VarInFuncIncident::getParams() {
 
 vector<string> VarInFuncIncident::getParamTypes() {
   return this->paramTypes;
+}
+
+string VarInFuncIncident::getFilePath() {
+  return this->filePath;
 }
 
 bool VarInFuncIncident::hasIncident(const clang::Stmt *stmt, vector <string> &incidentValues) {
@@ -181,6 +196,7 @@ bool VarInFuncIncident::hasCall(const clang::Stmt* stmt) {
     functionIncident.setParamsAndParamTypes(stmt);
     this->params = functionIncident.getParams();
     this->paramTypes = functionIncident.getParamTypes();
+    this->filePath = functionIncident.getFilePath();
     return true;
   }
   return false;

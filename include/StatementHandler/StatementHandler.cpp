@@ -15,6 +15,14 @@ string getStatementString(const clang::Stmt* stmt) {
   return ref.str();
 }
 
+string getFunctionFileName(const clang::FunctionDecl* functionDecl) {
+  Context *context = context->getInstance();
+  clang::SourceLocation sourceLocation = functionDecl->getBeginLoc();
+  const clang::SourceManager *SM = context->getContext()->SourceManager;
+  llvm::StringRef ref = SM->getFilename(sourceLocation);
+  return ref.str();
+}
+
 bool isInIf(const clang::CFGBlock *block, unsigned int previousBlockId) {
     int i = 0;
     for (clang::CFGBlock::const_succ_iterator I = block->succ_begin(), E = block->succ_end(); I != E; I++) {
@@ -27,7 +35,7 @@ bool isInIf(const clang::CFGBlock *block, unsigned int previousBlockId) {
 }
 
 bool hasFunctionCall(const clang::Stmt* stmt, string stmtClass, vector<string>& names, vector<vector<string>>& paramNames, vector<vector<string>>& paramTypes) {
-    cout << getStatementString(stmt) << " " << stmtClass << endl;
+//    cout << getStatementString(stmt) << " " << stmtClass << endl;
     if (stmtClass.compare("BinaryOperator") == 0 || stmtClass.compare("CompoundAssignOperator") == 0) {
         const clang::BinaryOperator *binaryOperator = cast<clang::BinaryOperator>(stmt);
         const clang::Stmt *lhs = binaryOperator->getLHS();
@@ -68,9 +76,9 @@ bool hasFunctionCall(const clang::Stmt* stmt, string stmtClass, vector<string>& 
         const clang::Decl* declaration = declStmt->getSingleDecl();
         if (declaration) {
             const clang::VarDecl *varDecl = cast<clang::VarDecl>(declaration);
-            cout << "VarDecl: " << varDecl->getNameAsString() << " has init: " << varDecl->hasInit() << endl;
+//            cout << "VarDecl: " << varDecl->getNameAsString() << " has init: " << varDecl->hasInit() << endl;
             if (varDecl && varDecl->hasInit()) {
-                cout << "Has init:\n";
+//                cout << "Has init:\n";
                 const clang::Stmt* rhs = varDecl->getInit();
                 return hasFunctionCall(rhs, rhs->getStmtClassName(), names, paramNames, paramTypes);
             }
@@ -190,8 +198,9 @@ void getStmtOperands(const clang::Stmt* stmt, set<pair<string, string>>& operand
             } else if (stmtClass.compare("ImplicitCastExpr") == 0) {
                 const clang::Stmt* subExpr = cast<clang::ImplicitCastExpr>(stmt)->getSubExpr();
                 string subExprClassName(subExpr->getStmtClassName());
+                // FIXME: Do not check statement class here
                 if (subExprClassName.compare("DeclRefExpr") == 0)
-                    return getStmtOperands(subExpr, operands, type);
+                  return getStmtOperands(subExpr, operands, type);
             }
             string var = getStatementString(stmt);
             SymbolTable *st = st->getInstance();

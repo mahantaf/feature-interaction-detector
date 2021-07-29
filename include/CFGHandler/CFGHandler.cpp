@@ -40,6 +40,7 @@ void CFGHandler::findChildStatementIncident(const clang::Stmt* stmt, bool& varIn
     if (result != -1) {
         this->fs.writeVarInFuncParameters(varInFuncIncident->getParams(), varInFuncLock);
         this->fs.writeVarInFuncParametersType(varInFuncIncident->getParamTypes(), varInFuncTypeLock);
+        this->fs.writeFunctionFilePath(varInFuncIncident->getFilePath());
     }
 }
 
@@ -125,6 +126,7 @@ void CFGHandler::collectConstraints() {
         FunctionIncident* functionIncident = dynamic_cast<FunctionIncident*>(this->incident);
         this->fs.writeFunctionParameters(functionIncident->getParams());
         this->fs.writeFunctionParametersType(functionIncident->getParamTypes());
+        this->fs.writeFunctionFilePath(functionIncident->getFilePath());
         return;
     }
     vector<vector<string>> initialConstraintsList;

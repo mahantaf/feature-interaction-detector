@@ -7,6 +7,7 @@
 
 #include <clang/AST/Stmt.h>
 #include <clang/AST/Decl.h>
+#include <clang/AST/DeclBase.h>
 #include <clang/AST/Expr.h>
 
 #include <llvm/Support/Casting.h>
@@ -76,6 +77,8 @@ public:
 
   vector<string> getParamTypes();
 
+  string getFilePath();
+
   void setParamsAndParamTypes(const clang::Stmt* stmt);
 
   bool hasIncident(const clang::Stmt* stmt, vector<string>& incidentValues);
@@ -83,6 +86,7 @@ public:
   void print();
 
 private:
+  string filePath;
   vector<string> params;
   vector<string> paramTypes;
 };
@@ -94,6 +98,8 @@ public:
   vector<string> getParams();
 
   vector<string> getParamTypes();
+
+  string getFilePath();
 
   bool hasIncident(const clang::Stmt *stmt, vector <string> &incidentValues);
 
@@ -107,6 +113,7 @@ public:
 
   void print();
 private:
+  string filePath;
   vector<string> params;
   vector<string> paramTypes;
 };

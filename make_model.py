@@ -64,6 +64,13 @@ def get_rs_not_in_ls(ls, rs):
     return nlr
 
 
+def convert_assignment_to_z3(statement):
+    lrs = statement.split(" = ")
+    l = lrs[0]
+    r = convert_to_z3(lrs[1].replace(".", "_").replace("()", ""))
+    return l + " = " + r
+
+
 statements = []
 for line in reversed(file_lines):
     if line.strip() != "!()":
@@ -84,7 +91,7 @@ for line in reversed(file_lines):
 
 # print("-------UNASSIGN-------")
 # for unassign in unassigned:
-    # print(unassign)
+# print(unassign)
 # print("-------ASSIGN-------")
 lvalues = []
 rvalues = []
@@ -98,10 +105,9 @@ for assign in assigned:
 # print(lvalues)
 # print("-------RVALUES-------")
 # print(rvalues)
-not_l_rvalues = get_rs_not_in_ls(lvalues, rvalues) + get_rs_not_in_ls(lvalues, get_unassigned_values(unassigned))
-# print("-------NOT_LVALUES-------")
-# print(not_l_rvalues)
-
+rs_not_in_ls = get_rs_not_in_ls(lvalues, rvalues)
+unassigned_not_in_ls = get_rs_not_in_ls(lvalues, get_unassigned_values(unassigned))
+not_l_rvalues = rs_not_in_ls + list(set(unassigned_not_in_ls) - set(rs_not_in_ls))
 
 not_l_statements = []
 for not_l_rvalue in not_l_rvalues:
@@ -114,6 +120,8 @@ for not_l_rvalue in not_l_rvalues:
 assignment_statement = []
 for assign in assigned:
     statement = next(item for item in statements if assign in item["Statement"])
+    if "||" in statement["Statement"] or "&&" in statement["Statement"] or "!" in statement["Statement"]:
+        statement["Statement"] = convert_assignment_to_z3(statement["Statement"].replace(".", "_").replace("()", ""))
     assignment_statement.append(statement)
     statements.remove(statement)
 
