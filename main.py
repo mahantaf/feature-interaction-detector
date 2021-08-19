@@ -231,9 +231,10 @@ class Parser:
             split_name = name.split("::")
             class_name = self.pattern.sub('_', split_name[1]).lower()
             return "autonomoose_core/" + split_name[0] + "/src/" + class_name + ".cpp"
-        file_path = fs.read_function_path()
+        return name
+        # file_path = fs.read_function_path()
         # return extract_file_path(file_path)
-        return None
+        # return None
 
 
 class Command:

@@ -110,11 +110,8 @@ void FunctionIncident::setParamsAndParamTypes(const clang::Stmt* stmt) {
 bool FunctionIncident::hasIncident(const clang::Stmt* stmt, vector<string>& incidentValues) {
   const string stmtClass(stmt->getStmtClassName());
   if (stmtClass.compare("CallExpr") == 0 || stmtClass.compare("CXXMemberCallExpr") == 0) {
-
     const clang::CallExpr* callExpr = cast<clang::CallExpr>(stmt);
     const clang::FunctionDecl *functionDecl = cast<clang::CallExpr>(stmt)->getDirectCallee();
-
-    cout << "DECL IS DEF: " << functionDecl->willHaveBody() << endl;
 
     if (functionDecl) {
       string stmtString = functionDecl->getNameInfo().getAsString();

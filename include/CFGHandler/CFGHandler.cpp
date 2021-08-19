@@ -64,17 +64,18 @@ void CFGHandler::findStatementIncident(const clang::Stmt* stmt, int& varInFuncCo
         vector<vector<string>> initialConstraintsList = context->getInitialConstraintsList();
 
         if (initialConstraintsList.size()) {
-            SymbolTable *st = st->getInstance();
-            map <string, pair<set<string>, string>> tableCopy = st->getTable();
-            for (const clang::Stmt* statement : incidentValues) {
-                this->paths.clear();
-                for (vector<string> initialConstraints : initialConstraintsList) {
-                    st->setTable(tableCopy);
-                    vector<string> constraints = initialConstraints;
-                    string constraint = this->cfgBlockHandler.getIfStmtCondition(statement, _if);
-                    constraints.push_back(constraint);
-                    this->paths.push_back(Path(constraints));
-                }
+          SymbolTable *st = st->getInstance();
+          map<string, pair<set<string>, string>> tableCopy = st->getTable();
+          cout << "Incident values size:  " << incidentValues.size() << endl;
+            for (const clang::Stmt *statement : incidentValues) {
+              this->paths.clear();
+              for (vector<string> initialConstraints : initialConstraintsList) {
+                st->setTable(tableCopy);
+                vector<string> constraints = initialConstraints;
+                string constraint = this->cfgBlockHandler.getIfStmtCondition(statement, _if);
+                constraints.push_back(constraint);
+                this->paths.push_back(Path(constraints));
+              }
             }
         } else {
             for (const clang::Stmt* statement : incidentValues) {
@@ -85,6 +86,7 @@ void CFGHandler::findStatementIncident(const clang::Stmt* stmt, int& varInFuncCo
                 this->paths.push_back(Path(constraints));
             }
         }
+        cout << "Path size: " << this->paths.size();
         this->writePaths();
     }
 }
@@ -117,12 +119,19 @@ vector<vector<string>> CFGHandler::readConstraintsList() {
     return this->fs.readFunctionConstraints();
 }
 
+void CFGHandler::writeConstraintsList(vector<vector<string>> constraintsList) {
+  for (vector<string> constraints : constraintsList) {
+    this->fs.writeMainConstraints(constraints);
+  }
+}
+
 void CFGHandler::clearConstraintsList() {
     this->fs.clearMainConstraintsFile();
 }
 
 void CFGHandler::collectConstraints() {
     if (this->incident->getType().compare("FUNCTION") == 0) {
+        cout << "In collecting constraints" << endl;
         FunctionIncident* functionIncident = dynamic_cast<FunctionIncident*>(this->incident);
         this->fs.writeFunctionParameters(functionIncident->getParams());
         this->fs.writeFunctionParametersType(functionIncident->getParamTypes());
@@ -132,7 +141,9 @@ void CFGHandler::collectConstraints() {
     vector<vector<string>> initialConstraintsList;
     if (this->incident->getType().compare("RETURN") != 0) {
         initialConstraintsList = this->fs.readFunctionConstraints();
-        this->fs.clearMainConstraintsFile();
+        if (this->incidentBlocks.size()) { // If there is an incident in this command then clear the file o.w keep it.
+          this->fs.clearMainConstraintsFile();
+        }
     } else {
         this->fs.clearWriteConstarintsFile();
     }

@@ -147,9 +147,14 @@ public:
             const clang::SourceManager *SM = Result.SourceManager;
             if (SM->isInMainFile(SL)) {
                 CFGHandler cfgHandler(nullptr);
-                if (incidentType.compare("VARINFFUNC") == 0)
+                if (incidentType.compare("VARINFFUNC") == 0) {
                     cfgHandler.findStatementIncident(If, varInFuncCounter, varInFuncCount);
-                else if (incidentType.compare("VARINFUNCEXTEND") == 0)
+
+                    vector<vector<string>> currentConstraintsList = cfgHandler.readConstraintsList();
+                    if (currentConstraintsList.empty())
+                      cfgHandler.writeConstraintsList(context->getInitialConstraintsList());
+
+                } else if (incidentType.compare("VARINFUNCEXTEND") == 0)
                     cfgHandler.findChildStatementIncident(If, varInFuncLock, varInFuncTypeLock);
                 return;
             }
@@ -199,6 +204,7 @@ public:
             const auto matching_node = clang::ast_matchers::functionDecl().bind("fn");
             match_finder.addMatcher(matching_node, &varWriteCallBack);
         } else {
+            cout << functionName << endl;
             const auto matching_node = clang::ast_matchers::functionDecl(
                     clang::ast_matchers::hasName(functionName)).bind("fn");
             match_finder.addMatcher(matching_node, &handler);
@@ -225,7 +231,7 @@ public:
         clang::Preprocessor &pp = CI.getPreprocessor();
         pp.SetSuppressIncludeNotFoundError(true);
         clang::DiagnosticsEngine& de = pp.getDiagnostics();
-        de.setErrorLimit(1000);
+        de.setErrorLimit(10000);
         de.setSuppressAllDiagnostics(true);
         return std::make_unique<MyConsumer>();
     }

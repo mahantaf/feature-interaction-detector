@@ -55,6 +55,8 @@ public:
 
     void writeVarWritePaths();
 
+    void writeConstraintsList(vector<vector<string>> constraintsList);
+
     unsigned int getEntryBlockId();
 
     vector<const clang::CFGBlock*> getIncidentBlocks();
